@@ -132,6 +132,7 @@ export function detectFormat(
   subject: JsonObject,
   signatureProperty: string = DEFAULT_SIGNATURE_PROPERTY,
 ): SignatureFormat | null {
+  // eslint-disable-next-line security/detect-object-injection -- `signatureProperty` is either caller-controlled or the default "signature" literal; the lookup is the documented behavior of this function.
   const candidate = subject[signatureProperty];
   if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
     return null;

@@ -221,7 +221,7 @@ Apache License 2.0. See `LICENSE`.
 
 ## Related specifications
 
-* JSF 0.82: https://cyberphone.github.io/doc/security/jsf.html
-* JSS (ITU-T X.590, 2023-10): https://www.itu.int/epublications/publication/itu-t-x-590-2023-10-json-signature-scheme-jss
-* JCS (RFC 8785): https://datatracker.ietf.org/doc/html/rfc8785
-* CycloneDX: https://cyclonedx.org
+* JSF 0.82: <https://cyberphone.github.io/doc/security/jsf.html>
+* JSS (ITU-T X.590, 2023-10): <https://www.itu.int/epublications/publication/itu-t-x-590-2023-10-json-signature-scheme-jss>
+* JCS (RFC 8785): <https://datatracker.ietf.org/doc/html/rfc8785>
+* CycloneDX: <https://cyclonedx.org>

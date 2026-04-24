@@ -120,7 +120,9 @@ function writeString(value: string, out: string[]): void {
       if (i > runStart) {
         out.push(value.slice(runStart, i));
       }
+      // eslint-disable-next-line security/detect-object-injection -- SHORT_ESCAPES is a static constant table; `code` is a char code derived from a string just passed in.
       const short = SHORT_ESCAPES[code];
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- SHORT_ESCAPES covers only a subset of code < 0x20, so a lookup miss is expected and must fall back to the \uXXXX form.
       if (short !== undefined) {
         out.push(short);
       } else {
@@ -141,6 +143,7 @@ function writeArray(value: unknown[], out: string[]): void {
     if (i > 0) {
       out.push(',');
     }
+    // eslint-disable-next-line security/detect-object-injection -- `i` is a loop index bound by value.length on the array we were just given.
     const item = value[i];
     if (item === undefined) {
       // Matching JSON.stringify would emit null for a sparse slot,
@@ -160,6 +163,7 @@ function writeObject(value: Record<string, unknown>, out: string[]): void {
   // default < ordering.
   const keys: string[] = [];
   for (const key of Object.keys(value)) {
+    // eslint-disable-next-line security/detect-object-injection -- `key` came from Object.keys() of `value` on the previous line; it is a known own property.
     const v = value[key];
     if (v === undefined) {
       // Matching JSON.stringify would drop undefined values silently;
@@ -177,9 +181,11 @@ function writeObject(value: Record<string, unknown>, out: string[]): void {
     if (i > 0) {
       out.push(',');
     }
+    // eslint-disable-next-line security/detect-object-injection -- `i` is a loop index into a local array we just built.
     const key = keys[i] as string;
     writeString(key, out);
     out.push(':');
+    // eslint-disable-next-line security/detect-object-injection -- `key` was sourced from Object.keys(value) above.
     writeValue(value[key], out);
   }
   out.push('}');

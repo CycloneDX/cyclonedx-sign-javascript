@@ -83,7 +83,9 @@ const SPECS: Record<JsfAlgorithm, AlgorithmSpec> = {
 };
 
 export function getAlgorithmSpec(algorithm: string): AlgorithmSpec {
+  // eslint-disable-next-line security/detect-object-injection -- `algorithm` is validated below via the hasOwn check on the SPECS table.
   const spec = SPECS[algorithm as JsfAlgorithm];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- The cast above lies to TypeScript; at runtime `algorithm` may be any string, so this guard covers the spec-missing case.
   if (!spec) {
     throw new JsfInputError(`Unknown JSF algorithm: ${algorithm}`);
   }

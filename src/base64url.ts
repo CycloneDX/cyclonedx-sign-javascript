@@ -38,6 +38,7 @@ export function decodeBase64Url(input: string): Uint8Array {
 export function encodeBase64UrlBigInteger(bytes: Uint8Array | Buffer): string {
   const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
   let start = 0;
+  // eslint-disable-next-line security/detect-object-injection -- `start` is a loop-bounded numeric index into a Buffer we just materialized.
   while (start < buf.length - 1 && buf[start] === 0) {
     start += 1;
   }

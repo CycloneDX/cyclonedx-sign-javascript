@@ -74,14 +74,16 @@ const DEFAULT_SIGNATURE_PROPERTY = 'signature';
  * The input payload is not mutated.
  */
 export function sign(payload: JsonObject, options: JsfSignOptions): JsonObject {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers that bypass the JsonObject declared type.
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new JsfInputError('JSF sign requires a JSON object payload');
   }
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers that pass null or a non-object in place of options.
   if (!options || typeof options !== 'object') {
     throw new JsfInputError('JSF sign requires an options object');
   }
   if (!isRegisteredAlgorithm(options.algorithm)) {
-    throw new JsfInputError(`Unsupported algorithm: ${options.algorithm}`);
+    throw new JsfInputError(`Unsupported algorithm: ${options.algorithm as string}`);
   }
 
   const signatureProperty = options.signatureProperty ?? DEFAULT_SIGNATURE_PROPERTY;
@@ -135,6 +137,7 @@ export function sign(payload: JsonObject, options: JsfSignOptions): JsonObject {
 
   // Emit a fresh object so the caller's payload stays untouched.
   const output: JsonObject = { ...payload };
+  // eslint-disable-next-line security/detect-object-injection -- `signatureProperty` is the documented target field and defaults to the "signature" literal.
   output[signatureProperty] = orderedSigner(signer) as unknown as JsonValue;
   return output;
 }
@@ -148,11 +151,13 @@ export function sign(payload: JsonObject, options: JsfSignOptions): JsonObject {
  * bugs, never for cryptographic failures.
  */
 export function verify(payload: JsonObject, options: JsfVerifyOptions = {}): JsfVerifyResult {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers that bypass the JsonObject declared type.
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new JsfInputError('JSF verify requires a JSON object payload');
   }
 
   const signatureProperty = options.signatureProperty ?? DEFAULT_SIGNATURE_PROPERTY;
+  // eslint-disable-next-line security/detect-object-injection -- `signatureProperty` is the documented signer location and defaults to the "signature" literal.
   const signerAny = payload[signatureProperty];
   if (signerAny === undefined) {
     throw new JsfEnvelopeError(`Payload has no "${signatureProperty}" property`);
@@ -314,8 +319,10 @@ function buildCanonicalView(
   for (const key of Object.keys(payload)) {
     if (excluded.has(key)) continue;
     if (key === signatureProperty) continue;
+    // eslint-disable-next-line security/detect-object-injection -- `key` came from Object.keys(payload) above; copying the payload's own entries into the canonical view.
     view[key] = payload[key] as JsonValue;
   }
+  // eslint-disable-next-line security/detect-object-injection -- `signatureProperty` is the documented signer location and defaults to "signature".
   view[signatureProperty] = baseSigner as unknown as JsonValue;
   return view;
 }

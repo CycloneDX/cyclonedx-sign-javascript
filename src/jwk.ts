@@ -73,6 +73,7 @@ export function toPrivateKey(input: KeyInput): NormalizedPrivateKey {
   }
 
   // Must be a JWK-like object
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Earlier branches narrowed the input, but this is a runtime guard that protects against JS callers that bypass the declared KeyInput type.
   if (typeof input === 'object' && input !== null && 'kty' in (input as object)) {
     const jwk = input as JwkPublicKey;
     if (jwk.kty === 'oct') {
@@ -181,6 +182,7 @@ export function sanitizePublicJwk(raw: Record<string, unknown>): JwkPublicKey {
 
 function requireFields(raw: Record<string, unknown>, fields: string[], kty: string): void {
   for (const field of fields) {
+    // eslint-disable-next-line security/detect-object-injection -- `field` is a caller-supplied constant list of JWK member names (for example ['n', 'e']).
     if (raw[field] === undefined || raw[field] === null || raw[field] === '') {
       throw new JsfKeyError(`JWK ${kty} missing required field ${field}`);
     }
