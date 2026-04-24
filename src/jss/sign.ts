@@ -29,6 +29,7 @@ import type {
  *
  * Currently throws JssNotImplementedError. See module docstring.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars -- Parameters are declared to lock the public API; the body throws a JssNotImplementedError until the X.590 implementation lands.
 export function sign(_payload: JsonObject, _options: JssSignOptions): JsonObject {
   throw new JssNotImplementedError(
     'JSS sign is a stub. JSS (X.590) signing will land in a future release. ' +
@@ -41,6 +42,7 @@ export function sign(_payload: JsonObject, _options: JssSignOptions): JsonObject
  *
  * Currently throws JssNotImplementedError. See module docstring.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars -- Parameters are declared to lock the public API; the body throws a JssNotImplementedError until the X.590 implementation lands.
 export function verify(_payload: JsonObject, _options: JssVerifyOptions = {}): JssVerifyResult {
   throw new JssNotImplementedError(
     'JSS verify is a stub. JSS (X.590) verification will land in a future release. ' +

@@ -159,6 +159,7 @@ export function verify(payload: JsonObject, options: JsfVerifyOptions = {}): Jsf
   const signatureProperty = options.signatureProperty ?? DEFAULT_SIGNATURE_PROPERTY;
   // eslint-disable-next-line security/detect-object-injection -- `signatureProperty` is the documented signer location and defaults to the "signature" literal.
   const signerAny = payload[signatureProperty];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- with noUncheckedIndexedAccess, payload[signatureProperty] is string | undefined; this guard is load bearing.
   if (signerAny === undefined) {
     throw new JsfEnvelopeError(`Payload has no "${signatureProperty}" property`);
   }
@@ -267,7 +268,7 @@ function resolveEmbeddedPublicKey(
     return exportPublicJwk(options.privateKey);
   }
 
-  return exportPublicJwk(options.publicKey as KeyInput);
+  return exportPublicJwk(options.publicKey);
 }
 
 function resolveVerifyingKey(
@@ -320,6 +321,7 @@ function buildCanonicalView(
     if (excluded.has(key)) continue;
     if (key === signatureProperty) continue;
     // eslint-disable-next-line security/detect-object-injection -- `key` came from Object.keys(payload) above; copying the payload's own entries into the canonical view.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- noUncheckedIndexedAccess widens payload[key] to `| undefined`; the key was just read from Object.keys so undefined is impossible.
     view[key] = payload[key] as JsonValue;
   }
   // eslint-disable-next-line security/detect-object-injection -- `signatureProperty` is the documented signer location and defaults to "signature".

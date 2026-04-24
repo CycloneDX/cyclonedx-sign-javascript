@@ -35,7 +35,10 @@ export type JsfAlgorithm =
  * plus optional keyId, publicKey, certificatePath, and excludes.
  */
 export interface JsfSigner {
-  algorithm: JsfAlgorithm | string;
+  // The `string & {}` preserves JsfAlgorithm autocomplete while still
+  // accepting any string, which the JSF spec allows via URI algorithm
+  // identifiers.
+  algorithm: JsfAlgorithm | (string & {});
   keyId?: string;
   publicKey?: JwkPublicKey;
   certificatePath?: string[];
@@ -58,6 +61,7 @@ export interface JsfSignOptions {
    * For HMAC (HS*) algorithms the public key is always omitted, since
    * the signing key is the verifying key.
    */
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- 'auto' is a documented sentinel string. Keeping the literal in the union aids autocomplete and documents the option.
   publicKey?: KeyInput | false | 'auto';
 
   /** Application-specific key identifier. Optional. */
@@ -105,7 +109,7 @@ export interface JsfVerifyOptions {
    * whose algorithm is not on the list fails verification before any
    * cryptographic work runs.
    */
-  allowedAlgorithms?: (JsfAlgorithm | string)[];
+  allowedAlgorithms?: (JsfAlgorithm | (string & {}))[];
 
   /**
    * When true, the signer MUST carry an embedded publicKey. The caller
@@ -120,7 +124,7 @@ export interface JsfVerifyResult {
   valid: boolean;
 
   /** Algorithm recorded in the signer (if recoverable). */
-  algorithm?: JsfAlgorithm | string;
+  algorithm?: JsfAlgorithm | (string & {});
 
   /** Public key embedded in the signer (if any). */
   publicKey?: JwkPublicKey;

@@ -35,7 +35,7 @@ export interface NormalizedPrivateKey {
   curve: string | null;
 }
 
-export interface NormalizedPublicKey extends NormalizedPrivateKey {}
+export type NormalizedPublicKey = NormalizedPrivateKey;
 
 /**
  * Convert a KeyInput to a Node private KeyObject, along with some
@@ -74,8 +74,8 @@ export function toPrivateKey(input: KeyInput): NormalizedPrivateKey {
 
   // Must be a JWK-like object
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Earlier branches narrowed the input, but this is a runtime guard that protects against JS callers that bypass the declared KeyInput type.
-  if (typeof input === 'object' && input !== null && 'kty' in (input as object)) {
-    const jwk = input as JwkPublicKey;
+  if (typeof input === 'object' && input !== null && 'kty' in input) {
+    const jwk = input;
     if (jwk.kty === 'oct') {
       if (!jwk.k) {
         throw new JsfKeyError('JWK oct requires a k property');
@@ -123,8 +123,9 @@ export function toPublicKey(input: KeyInput): NormalizedPublicKey {
     return { keyObject: secret, asymmetricKeyType: 'oct', curve: null };
   }
 
-  if (typeof input === 'object' && input !== null && 'kty' in (input as object)) {
-    const jwk = input as JwkPublicKey;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers that bypass the declared KeyInput type.
+  if (typeof input === 'object' && input !== null && 'kty' in input) {
+    const jwk = input;
     if (jwk.kty === 'oct') {
       if (!jwk.k) {
         throw new JsfKeyError('JWK oct requires a k property');

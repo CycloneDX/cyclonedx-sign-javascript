@@ -16,6 +16,7 @@ export type JsonValue =
   | JsonValue[]
   | JsonObject;
 
+// eslint-disable-next-line @typescript-eslint/consistent-indexed-object-style -- Kept as an interface because JsonValue and JsonObject are mutually recursive; type aliases cannot express that directly.
 export interface JsonObject {
   [key: string]: JsonValue;
 }
@@ -68,7 +69,9 @@ export type KeyInput = JwkPublicKey | string | Buffer | Uint8Array | KeyObject;
  * and avoids leaking signing-format vocabulary into the call site.
  */
 export enum CycloneDxMajor {
+  // eslint-disable-next-line no-unused-vars -- enum members are consumed at call sites (for example sign(..., { cyclonedxVersion: CycloneDxMajor.V1 })) but the rule does not see cross-file usage.
   V1 = 1,
+  // eslint-disable-next-line no-unused-vars -- enum members are consumed at call sites but the rule does not see cross-file usage.
   V2 = 2,
 }
 

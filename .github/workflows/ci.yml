@@ -58,3 +58,38 @@ jobs:
 
       - name: Test
         run: npm test
+
+  coverage:
+    name: Coverage (upload to Codacy)
+    runs-on: ubuntu-latest
+    # Coverage upload requires the CODACY_PROJECT_TOKEN secret, which
+    # is not available to workflow runs triggered from fork PRs. Run
+    # on pushes to main (and workflow_dispatch) and on same-repo PRs.
+    if: >
+      github.event_name == 'push'
+      || github.event_name == 'workflow_dispatch'
+      || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --no-progress
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage to Codacy
+        # Requires repo secret CODACY_PROJECT_TOKEN. If unset, the step
+        # is a no-op thanks to the outer job `if`.
+        uses: codacy/codacy-coverage-reporter-action@v1
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: coverage/lcov.info

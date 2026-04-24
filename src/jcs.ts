@@ -177,12 +177,12 @@ function writeObject(value: Record<string, unknown>, out: string[]): void {
   keys.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
   out.push('{');
-  for (let i = 0; i < keys.length; i += 1) {
-    if (i > 0) {
+  let first = true;
+  for (const key of keys) {
+    if (!first) {
       out.push(',');
     }
-    // eslint-disable-next-line security/detect-object-injection -- `i` is a loop index into a local array we just built.
-    const key = keys[i] as string;
+    first = false;
     writeString(key, out);
     out.push(':');
     // eslint-disable-next-line security/detect-object-injection -- `key` was sourced from Object.keys(value) above.

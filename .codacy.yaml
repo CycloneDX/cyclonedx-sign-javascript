@@ -2,31 +2,28 @@
 # Codacy analysis configuration for @cyclonedx/sign.
 #
 # Docs: https://docs.codacy.com/repositories-configure/codacy-configuration-file/
+#
+# NOTE: Codacy's YAML `engines:` block only recognizes the legacy tool
+# identifiers. Newer tools (Biome, PMD, PMD7, Trivy, Opengrep, Checkov,
+# Agentlinter, Jackson Linter, Spectral, and similar) cannot be turned
+# off from this file. They are controlled exclusively from the Codacy
+# UI at Repository Settings -> Tool Configuration. For this repo the
+# following tools have been disabled there:
+#   - Biome (overlaps with ESLint; rules do not fit this codebase)
+#   - PMD and PMD7 (Java-centric; TypeScript support is narrow)
+#   - Trivy (container / IaC scanner; no IaC in this repo)
+# The remaining tools driving the grade are ESLint, Lizard (complexity),
+# and markdownlint.
 
 engines:
   # TSLint has been deprecated by its authors since 2019 in favor of
-  # typescript-eslint. Running both only produces redundant findings
-  # (and TSLint flags a lot of style opinions we do not follow, such
-  # as only-arrow-functions, object-literal-sort-keys, and
-  # no-magic-numbers on cryptographic constants).
+  # typescript-eslint.
   tslint:
     enabled: false
 
-  # This project does not use Prettier. Both plain Prettier and the
-  # Prettier-Vue plugin produce formatting complaints that conflict
-  # with the repo's own style.
+  # Prettier is not used in this repo.
   prettier:
     enabled: false
-
-  # This project does not use Biome. Its findings overlap with ESLint.
-  biome:
-    enabled: false
-
-  # markdownlint stays on but we relax MD034 (bare URLs) in the
-  # README's "Related specifications" section via line pragmas.
-
-  # ESLint 8 and Lizard (complexity) stay on. They surface the
-  # genuinely actionable findings.
 
 exclude_paths:
   # Generated build output.
@@ -46,6 +43,5 @@ exclude_paths:
   - test/fixtures/**/*.json
   - test/fixtures/**/*.pem
 
-  # The coverage output directory once step 3 of the Codacy grade
-  # plan lands.
+  # Coverage output.
   - coverage/**

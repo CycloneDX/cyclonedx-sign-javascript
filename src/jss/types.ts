@@ -40,6 +40,7 @@ export interface JssSigner {
 export interface JssSignOptions {
   algorithm: JssAlgorithm;
   privateKey: KeyInput;
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- 'auto' is a documented sentinel string; keeping the literal aids autocomplete.
   publicKey?: KeyInput | false | 'auto';
   keyId?: string;
   signatureProperty?: string;

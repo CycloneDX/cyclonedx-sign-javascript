@@ -12,7 +12,7 @@ and verify agree with each other.
 
 ## Source
 
-- Repository: https://github.com/cyberphone/node-webpki.org
+- Repository: <https://github.com/cyberphone/node-webpki.org>
 - Path in source: `test/`
 - Copied: 2026-04-21
 - Upstream license: Apache License 2.0 (declared in every lib/*.js
