@@ -21,16 +21,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['18', '20', '22']
+        # Node 20.19+ is the minimum; vitest 4 and rolldown do not
+        # support earlier versions.
+        node: ['20', '22', '24']
         os: [ubuntu-latest]
         include:
           # Run a single macOS and Windows job on the current LTS so we
           # catch platform specific regressions without paying the full
           # matrix cost on every push.
           - os: macos-latest
-            node: '20'
+            node: '22'
           - os: windows-latest
-            node: '20'
+            node: '22'
 
     steps:
       - name: Checkout
@@ -42,8 +44,11 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
+      # `npm install` rather than `npm ci` so the runner resolves its
+      # own platform-specific optional deps (rolldown ships different
+      # native bindings per OS and arch).
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund --no-progress
 
       - name: Typecheck
         run: npm run typecheck

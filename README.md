@@ -24,7 +24,7 @@ The library is self contained. It has no runtime dependencies beyond `node:crypt
 npm install @cyclonedx/sign
 ```
 
-Requires Node 18 or later.
+Requires Node 20.19 or later.
 
 ## Quick start
 
