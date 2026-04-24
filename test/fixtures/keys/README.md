@@ -1,7 +1,9 @@
-# JSF Test Key Fixtures
+# Test Key Fixtures
 
 These PEM files are static test keys committed to the repository so that
 signature fixtures and interoperability tests can run deterministically.
+They are format neutral: JSF tests use them today, and JSS tests will
+reuse whichever of them match the JSS algorithm set when that lands.
 
 ## Keys
 

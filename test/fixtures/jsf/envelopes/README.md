@@ -2,7 +2,7 @@
 
 One file per supported JSF algorithm. Each file is a complete JSF envelope
 produced by the package `sign()` function from a canonical test payload
-and the matching PEM key in `../keys/` (or the canned HMAC secret for
+and the matching PEM key in `../../keys/` (or the canned HMAC secret for
 the HS* files).
 
 The fixtures are consumed by `fixtures.test.ts`:
@@ -26,7 +26,7 @@ those algorithms. That is expected. The test only asserts that
 If the envelope grammar or JCS output ever changes intentionally,
 regenerate these files by running the same script the CI uses:
 
-    node test/fixtures/build-signatures.mjs
+    node test/fixtures/jsf/build-envelopes.mjs
 
 ## Payload
 

@@ -20,7 +20,7 @@ import {
   isRegisteredAlgorithm,
   signBytes,
   verifyBytes,
-} from '../src/algorithms.js';
+} from '../src/jsf/algorithms.js';
 import { toPrivateKey, toPublicKey } from '../src/jwk.js';
 import { JsfInputError } from '../src/errors.js';
 

@@ -15,7 +15,7 @@ import {
   type KeyObject,
 } from 'node:crypto';
 
-import { sign, verify, computeCanonicalInput } from '../src/jsf.js';
+import { sign, verify, computeCanonicalInput } from '../src/jsf/index.js';
 import {
   JsfEnvelopeError,
   JsfInputError,

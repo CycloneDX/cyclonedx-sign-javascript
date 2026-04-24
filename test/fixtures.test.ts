@@ -8,7 +8,7 @@
  * fixtures here close that gap:
  *
  *   1. Own-fixtures: we committed one signed envelope per algorithm
- *      under test/fixtures/signatures/ plus the matching PEM keys
+ *      under test/fixtures/jsf/envelopes/ plus the matching PEM keys
  *      under test/fixtures/keys/. The tests call verify() against the
  *      committed envelope. Any change that causes our verify() to
  *      reject material we ourselves produced is flagged.
@@ -18,7 +18,7 @@
  *      that verify() accepts it. Takes RNG out of the loop so any
  *      failure is reproducible.
  *
- *   3. Interop: the test/fixtures/interop/webpki/ directory holds
+ *   3. Interop: the test/fixtures/jsf/interop/webpki/ directory holds
  *      envelopes produced by the JSF reference implementation,
  *      node-webpki.org. We run verify() on each and assert valid. A
  *      failure here points to a real deviation from the JSF spec as
@@ -41,14 +41,15 @@ import {
   type KeyObject,
 } from 'node:crypto';
 
-import { sign, verify } from '../src/jsf.js';
+import { sign, verify } from '../src/jsf/index.js';
 import type { JsonObject, JsfAlgorithm } from '../src/types.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, 'fixtures');
 const KEYS_DIR = join(FIXTURES, 'keys');
-const SIGS_DIR = join(FIXTURES, 'signatures');
-const INTEROP_DIR = join(FIXTURES, 'interop', 'webpki');
+const JSF_FIXTURES = join(FIXTURES, 'jsf');
+const SIGS_DIR = join(JSF_FIXTURES, 'envelopes');
+const INTEROP_DIR = join(JSF_FIXTURES, 'interop', 'webpki');
 
 const HMAC_SECRET_HEX =
   '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';

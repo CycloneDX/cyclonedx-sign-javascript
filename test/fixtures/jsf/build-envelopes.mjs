@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * Regenerate the committed JSF envelope fixtures under
- * ./signatures/ using the committed PEM keys under ./keys/.
+ * ./envelopes/ using the committed PEM keys under ../keys/.
  *
  * Usage:
- *   node test/fixtures/build-signatures.mjs
+ *   node test/fixtures/jsf/build-envelopes.mjs
  *
  * RSA-PSS and ECDSA signatures are randomized, so re-running this
  * script will change the `signature.value` strings for those
@@ -17,11 +17,11 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { sign } from '../../dist/index.js';
+import { sign } from '../../../dist/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const KEYS = join(HERE, 'keys');
-const OUT = join(HERE, 'signatures');
+const KEYS = join(HERE, '..', 'keys');
+const OUT = join(HERE, 'envelopes');
 mkdirSync(OUT, { recursive: true });
 
 const PAYLOAD = {

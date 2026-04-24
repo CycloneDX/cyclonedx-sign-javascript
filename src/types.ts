@@ -1,14 +1,18 @@
 /**
- * Public type definitions for the JSF package.
+ * Shared type definitions for the @cyclonedx/sign package.
  *
- * These types cover the JSF envelope, the supported algorithms per the
- * JSF 0.82 specification (and the CycloneDX jsf-0.82 subschema), and
- * the input shapes for sign and verify.
+ * This module holds only the types that are neutral across JSF and JSS.
+ * Format-specific types live in ./jsf/types.ts and ./jss/types.ts.
+ *
+ * The JSF-specific names that previously lived here (JsfAlgorithm,
+ * JsfSigner, SignOptions, VerifyOptions, VerifyResult, JsfJwkKeyType,
+ * JsfPublicKey) are re-exported at the bottom of this file so existing
+ * consumers that import from `./types.js` continue to work unchanged.
  */
 
 import type { KeyObject } from 'node:crypto';
 
-/** JSON value types recognized by JCS and JSF. */
+/** JSON value types recognized by JCS, JSF, and JSS. */
 export type JsonValue =
   | null
   | boolean
@@ -21,31 +25,15 @@ export interface JsonObject {
   [key: string]: JsonValue;
 }
 
+/** JWK key types recognized by both JSF and JSS signer envelopes. */
+export type JwkKeyType = 'RSA' | 'EC' | 'OKP' | 'oct';
+
 /**
- * JSF algorithm names. These match the JSF 0.82 specification and the
- * CycloneDX jsf-0.82 subschema enum exactly.
+ * JWK shape used by embedded publicKey fields. Both JSF and JSS use the
+ * same JWK layout, so this type is shared.
  */
-export type JsfAlgorithm =
-  | 'RS256'
-  | 'RS384'
-  | 'RS512'
-  | 'PS256'
-  | 'PS384'
-  | 'PS512'
-  | 'ES256'
-  | 'ES384'
-  | 'ES512'
-  | 'Ed25519'
-  | 'Ed448'
-  | 'HS256'
-  | 'HS384'
-  | 'HS512';
-
-/** JWK shape subset used by JSF's publicKey element. */
-export type JsfJwkKeyType = 'RSA' | 'EC' | 'OKP' | 'oct';
-
-export interface JsfPublicKey {
-  kty: JsfJwkKeyType;
+export interface JwkPublicKey {
+  kty: JwkKeyType;
   // RSA
   n?: string;
   e?: string;
@@ -53,132 +41,47 @@ export interface JsfPublicKey {
   crv?: string;
   x?: string;
   y?: string;
-  // HMAC (used for signing only; NOT embedded in envelopes because
-  // symmetric keys are secret — but we model the type for completeness)
+  // HMAC (signing only; never embedded in a signed envelope because
+  // symmetric keys are secret, but modeled for completeness).
   k?: string;
   [extra: string]: unknown;
 }
 
 /**
- * Shape of the JSF signer object as it appears inside an envelope.
- *
- * Per the JSF 0.82 schema a signer has algorithm and value as required,
- * plus optional keyId, publicKey, certificatePath, and excludes.
- */
-export interface JsfSigner {
-  algorithm: JsfAlgorithm | string;
-  keyId?: string;
-  publicKey?: JsfPublicKey;
-  certificatePath?: string[];
-  excludes?: string[];
-  value: string;
-}
-
-/**
- * Accepted private-key inputs for signing.
+ * Accepted private-key and public-key inputs for signing and verifying.
  *
  * JWK objects are fully-described material. Strings accept PEM-encoded
- * PKCS#8 private keys, SPKI public keys, or JWK-JSON. Buffers are
- * treated as DER, and KeyObjects pass through untouched.
+ * PKCS#8 private keys, SPKI public keys, X.509 certificates, or JWK
+ * JSON. Buffers are treated as raw symmetric key material. KeyObject
+ * instances pass through untouched.
  *
- * For HMAC (HS256/384/512) pass either a Buffer of raw key bytes or
- * a JWK with kty='oct' and k set to the base64url-encoded key.
+ * For HMAC (HS256/384/512) pass either a Buffer of raw key bytes or a
+ * JWK with kty='oct' and k set to the base64url-encoded key.
  */
-export type KeyInput = JsfPublicKey | string | Buffer | Uint8Array | KeyObject;
+export type KeyInput = JwkPublicKey | string | Buffer | Uint8Array | KeyObject;
 
-export interface SignOptions {
-  /** JSF algorithm identifier. */
-  algorithm: JsfAlgorithm;
+/**
+ * Signature format discriminator used by the top-level
+ * sign / verify / signBom / verifyBom API.
+ *
+ *   'jsf' — JSON Signature Format. Used by CycloneDX 1.x.
+ *   'jss' — JSON Signature Schema (X.590). Used by CycloneDX 2.x.
+ */
+export type SignatureFormat = 'jsf' | 'jss';
 
-  /** The signing key. See KeyInput for accepted shapes. */
-  privateKey: KeyInput;
+// -- Backward-compatibility re-exports ---------------------------------------
+// These were previously defined in this file. They now live alongside the
+// format they belong to, but the old import paths keep working.
 
-  /**
-   * Public key to embed in the signer.publicKey field. Pass `false`
-   * to omit (for keyId-only or certificatePath-based signatures), or
-   * `'auto'` to derive from the private key.
-   *
-   * For HMAC (HS*) algorithms the public key is always omitted, since
-   * the signing key is the verifying key.
-   */
-  publicKey?: KeyInput | false | 'auto';
+export type { JsfAlgorithm, JsfSigner } from './jsf/types.js';
+export type {
+  JsfSignOptions as SignOptions,
+  JsfVerifyOptions as VerifyOptions,
+  JsfVerifyResult as VerifyResult,
+} from './jsf/types.js';
 
-  /** Application-specific key identifier. Optional. */
-  keyId?: string;
+/** @deprecated Use JwkKeyType. */
+export type JsfJwkKeyType = JwkKeyType;
 
-  /**
-   * Ordered chain of base64-encoded DER X.509 certificates. The first
-   * element must hold the signature certificate.
-   */
-  certificatePath?: string[];
-
-  /**
-   * Top-level property names to exclude from the signed canonical
-   * form. Per JSF 0.82 the `excludes` property itself is always added
-   * to the exclusion set automatically.
-   */
-  excludes?: string[];
-
-  /**
-   * Property name under which the signer object is attached. Defaults
-   * to `"signature"`.
-   */
-  signatureProperty?: string;
-}
-
-export interface VerifyOptions {
-  /**
-   * Override the public key used for verification. When omitted the
-   * key embedded in the signer is used; when both are absent the
-   * verify fails with a descriptive error.
-   *
-   * HMAC verification always requires this because the symmetric key
-   * is never embedded in the envelope.
-   */
-  publicKey?: KeyInput;
-
-  /**
-   * Property name under which to find the signer object. Defaults to
-   * `"signature"`.
-   */
-  signatureProperty?: string;
-
-  /**
-   * Algorithms permitted for this verify call. If provided, a signer
-   * whose algorithm is not on the list fails verification before any
-   * cryptographic work runs.
-   */
-  allowedAlgorithms?: (JsfAlgorithm | string)[];
-
-  /**
-   * When true, the signer MUST carry an embedded publicKey. The caller
-   * can use this to defend against a signer swapping in a different
-   * key identifier after a trust decision was cached elsewhere.
-   */
-  requireEmbeddedPublicKey?: boolean;
-}
-
-export interface VerifyResult {
-  /** True only when the signature verified and no constraint failed. */
-  valid: boolean;
-
-  /** Algorithm recorded in the signer (if recoverable). */
-  algorithm?: JsfAlgorithm | string;
-
-  /** Public key embedded in the signer (if any). */
-  publicKey?: JsfPublicKey;
-
-  /** keyId recorded in the signer (if any). */
-  keyId?: string;
-
-  /** X.509 chain recorded in the signer (if any). */
-  certificatePath?: string[];
-
-  /** Excludes recorded in the signer (if any). */
-  excludes?: string[];
-
-  /**
-   * Human-readable reasons the verify failed. Empty when valid=true.
-   */
-  errors: string[];
-}
+/** @deprecated Use JwkPublicKey. */
+export type JsfPublicKey = JwkPublicKey;

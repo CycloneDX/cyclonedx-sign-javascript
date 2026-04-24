@@ -3,8 +3,8 @@
  *
  * See https://cyberphone.github.io/doc/security/jsf.html for the
  * authored specification, and the CycloneDX jsf-0.82 subschema for the
- * envelope grammar this package targets. Both versions agree on the
- * canonicalization-and-sign mechanics this module implements.
+ * envelope grammar this module targets. Both versions agree on the
+ * canonicalization and sign mechanics this module implements.
  *
  * Signing protocol (simple signatures, `signaturecore`):
  *   1. Build the signer object with algorithm and any optional
@@ -17,7 +17,7 @@
  *      Per JSF § 3.4, the `excludes` property name itself is added
  *      to the exclusion set automatically — the excluded data and
  *      the excludes list are both unsigned.
- *   4. Canonicalize the payload+signer object using JCS.
+ *   4. Canonicalize the payload plus signer object using JCS.
  *   5. Sign the canonical bytes using the algorithm.
  *   6. Add the base64url-encoded signature under `signer.value`.
  *   7. Return the original payload plus the completed signer.
@@ -31,12 +31,12 @@
  *      the (embedded or override) public key.
  */
 
-import { canonicalize } from './jcs.js';
+import { canonicalize } from '../jcs.js';
 import {
   exportPublicJwk,
   toPrivateKey,
   toPublicKey,
-} from './jwk.js';
+} from '../jwk.js';
 import {
   getAlgorithmSpec,
   isRegisteredAlgorithm,
@@ -46,22 +46,23 @@ import {
 import {
   decodeBase64Url,
   encodeBase64Url,
-} from './base64url.js';
+} from '../base64url.js';
 import {
   JsfEnvelopeError,
   JsfInputError,
   JsfVerifyError,
-} from './errors.js';
+} from '../errors.js';
 import type {
-  JsfAlgorithm,
-  JsfPublicKey,
-  JsfSigner,
   JsonObject,
   JsonValue,
+  JwkPublicKey,
   KeyInput,
-  SignOptions,
-  VerifyOptions,
-  VerifyResult,
+} from '../types.js';
+import type {
+  JsfSigner,
+  JsfSignOptions,
+  JsfVerifyOptions,
+  JsfVerifyResult,
 } from './types.js';
 
 const DEFAULT_SIGNATURE_PROPERTY = 'signature';
@@ -72,7 +73,7 @@ const DEFAULT_SIGNATURE_PROPERTY = 'signature';
  *
  * The input payload is not mutated.
  */
-export function sign(payload: JsonObject, options: SignOptions): JsonObject {
+export function signJsf(payload: JsonObject, options: JsfSignOptions): JsonObject {
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new JsfInputError('JSF sign requires a JSON object payload');
   }
@@ -141,12 +142,12 @@ export function sign(payload: JsonObject, options: SignOptions): JsonObject {
 /**
  * Verify a JSF-signed object.
  *
- * Returns a structured result with valid=false when the signature
- * does not verify or does not match the configured constraints.
- * Throws (JsfEnvelopeError / JsfInputError / JsfVerifyError) only for
- * caller bugs, never for cryptographic failures.
+ * Returns a structured result with valid=false when the signature does
+ * not verify or does not match the configured constraints. Throws
+ * (JsfEnvelopeError / JsfInputError / JsfVerifyError) only for caller
+ * bugs, never for cryptographic failures.
  */
-export function verify(payload: JsonObject, options: VerifyOptions = {}): VerifyResult {
+export function verifyJsf(payload: JsonObject, options: JsfVerifyOptions = {}): JsfVerifyResult {
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new JsfInputError('JSF verify requires a JSON object payload');
   }
@@ -161,7 +162,7 @@ export function verify(payload: JsonObject, options: VerifyOptions = {}): Verify
   }
   const signer = signerAny as unknown as JsfSigner;
 
-  const result: VerifyResult = { valid: false, errors: [] };
+  const result: JsfVerifyResult = { valid: false, errors: [] };
 
   if (typeof signer.algorithm !== 'string' || signer.algorithm.length === 0) {
     throw new JsfEnvelopeError('signer is missing algorithm');
@@ -222,7 +223,7 @@ export function verify(payload: JsonObject, options: VerifyOptions = {}): Verify
 }
 
 /**
- * Produce the canonical byte input for a given payload + signer.
+ * Produce the canonical byte input for a given payload plus signer.
  * Useful when callers need to pre-compute the bytes that will be
  * signed (for example to display a hash, or to support a two-phase
  * signing flow where the private key lives on a client).
@@ -230,7 +231,7 @@ export function verify(payload: JsonObject, options: VerifyOptions = {}): Verify
  * The signer argument is used to determine `excludes`; the signer
  * object itself is attached under signatureProperty minus `value`.
  */
-export function computeCanonicalInput(
+export function computeJsfCanonicalInput(
   payload: JsonObject,
   signer: Omit<JsfSigner, 'value'> & { value?: string },
   signatureProperty: string = DEFAULT_SIGNATURE_PROPERTY,
@@ -240,18 +241,16 @@ export function computeCanonicalInput(
   return canonicalize(toCanonicalize);
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// -- Helpers -----------------------------------------------------------------
 
 function resolveEmbeddedPublicKey(
-  options: SignOptions,
+  options: JsfSignOptions,
   family: 'rsa-pkcs1' | 'rsa-pss' | 'ecdsa' | 'eddsa' | 'hmac',
-): JsfPublicKey | null {
+): JwkPublicKey | null {
   if (family === 'hmac') {
     // HMAC is symmetric. Embedding the key would leak the secret, so
-    // we always omit — callers who do want to include a key hint can
-    // fall back to `keyId`.
+    // we always omit. Callers who want to include a key hint can fall
+    // back to `keyId`.
     return null;
   }
 
@@ -268,7 +267,7 @@ function resolveEmbeddedPublicKey(
 
 function resolveVerifyingKey(
   signer: JsfSigner,
-  options: VerifyOptions,
+  options: JsfVerifyOptions,
   family: 'rsa-pkcs1' | 'rsa-pss' | 'ecdsa' | 'eddsa' | 'hmac',
 ): KeyInput | null {
   if (options.publicKey !== undefined) {
@@ -290,8 +289,8 @@ function resolveVerifyingKey(
  *
  * Steps:
  *   - Strip the signer.value field.
- *   - Apply the signer's `excludes` list (plus the implicit
- *     exclusion of `excludes` itself).
+ *   - Apply the signer's `excludes` list (plus the implicit exclusion
+ *     of `excludes` itself).
  *   - Attach the trimmed signer under the configured property.
  */
 function buildCanonicalView(

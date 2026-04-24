@@ -1,7 +1,7 @@
 {
-  "name": "@cyclonedx/jsf",
-  "version": "0.1.0",
-  "description": "Standalone TypeScript implementation of JSON Signature Format (JSF) and JSON Canonicalization Scheme (JCS, RFC 8785). Self-contained, no runtime dependencies beyond Node crypto.",
+  "name": "@cyclonedx/sign",
+  "version": "0.2.0",
+  "description": "Standalone TypeScript implementation of JSON Signature Format (JSF), JSON Signature Schema (JSS, X.590), and the JSON Canonicalization Scheme (JCS, RFC 8785). Single library covering CycloneDX 1.x (JSF) and 2.x (JSS). Self-contained, no runtime dependencies beyond Node crypto.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
@@ -10,6 +10,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./jsf": {
+      "types": "./dist/jsf/index.d.ts",
+      "import": "./dist/jsf/index.js"
+    },
+    "./jss": {
+      "types": "./dist/jss/index.d.ts",
+      "import": "./dist/jss/index.js"
     },
     "./jcs": {
       "types": "./dist/jcs.d.ts",
@@ -30,12 +38,17 @@
     "node": ">=18.0.0"
   },
   "keywords": [
+    "cyclonedx",
+    "sbom",
+    "signature",
+    "signatures",
     "jsf",
     "json-signature-format",
+    "jss",
+    "json-signature-schema",
+    "x590",
     "jcs",
     "rfc8785",
-    "cyclonedx",
-    "signature",
     "canonicalization"
   ],
   "scripts": {
@@ -48,6 +61,6 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0",
-    "vitest": "^2.0.0"
+    "vitest": "^4.1.5"
   }
 }

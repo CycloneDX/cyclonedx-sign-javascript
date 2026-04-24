@@ -1,11 +1,12 @@
 /**
  * JSF algorithm registry and cryptographic primitives.
  *
- * This module owns every call into `node:crypto`. The JSF orchestrator
- * never touches Node's sign/verify directly — it asks this module to
- * sign/verify canonical bytes given a spec and a key object. That keeps
- * algorithm knowledge in exactly one place and gives callers a single
- * seam if they later want to retarget to WebCrypto or a hardware token.
+ * This module owns every call into `node:crypto` for JSF. The JSF
+ * orchestrator never touches Node's sign/verify directly — it asks this
+ * module to sign/verify canonical bytes given a spec and a key object.
+ * That keeps algorithm knowledge in exactly one place and gives callers
+ * a single seam if they later want to retarget to WebCrypto or a
+ * hardware token.
  *
  * Per the JSF 0.82 specification and the CycloneDX jsf-0.82 subschema:
  *   RS256/384/512 — RSA PKCS#1 v1.5 with SHA-256/384/512
@@ -28,7 +29,7 @@ import {
 } from 'node:crypto';
 
 import type { JsfAlgorithm } from './types.js';
-import { JsfSignError, JsfInputError } from './errors.js';
+import { JsfSignError, JsfInputError } from '../errors.js';
 
 export interface RsaPkcs1Spec {
   family: 'rsa-pkcs1';
