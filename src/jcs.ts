@@ -116,25 +116,29 @@ function writeString(value: string, out: string[]): void {
   let runStart = 0;
   for (let i = 0; i < value.length; i += 1) {
     const code = value.charCodeAt(i);
-    if (code < 0x20 || code === 0x22 || code === 0x5c) {
-      if (i > runStart) {
-        out.push(value.slice(runStart, i));
-      }
-      // eslint-disable-next-line security/detect-object-injection -- SHORT_ESCAPES is a static constant table; `code` is a char code derived from a string just passed in.
-      const short = SHORT_ESCAPES[code];
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- SHORT_ESCAPES covers only a subset of code < 0x20, so a lookup miss is expected and must fall back to the \uXXXX form.
-      if (short !== undefined) {
-        out.push(short);
-      } else {
-        out.push('\\u', code.toString(16).padStart(4, '0'));
-      }
-      runStart = i + 1;
-    }
+    if (!needsEscape(code)) continue;
+    if (i > runStart) out.push(value.slice(runStart, i));
+    out.push(escapeFor(code));
+    runStart = i + 1;
   }
   if (runStart < value.length) {
     out.push(value.slice(runStart));
   }
   out.push('"');
+}
+
+/** True if the given code unit must be JSON-escaped per RFC 8785. */
+function needsEscape(code: number): boolean {
+  return code < 0x20 || code === 0x22 || code === 0x5c;
+}
+
+/** Produce the JSON escape sequence for a code unit that needsEscape() flagged. */
+function escapeFor(code: number): string {
+  // eslint-disable-next-line security/detect-object-injection -- SHORT_ESCAPES is a static constant table; `code` is a numeric char code.
+  const short = SHORT_ESCAPES[code];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- SHORT_ESCAPES covers only a subset of code < 0x20, so a lookup miss is expected and must fall back to the \uXXXX form.
+  if (short !== undefined) return short;
+  return '\\u' + code.toString(16).padStart(4, '0');
 }
 
 function writeArray(value: unknown[], out: string[]): void {

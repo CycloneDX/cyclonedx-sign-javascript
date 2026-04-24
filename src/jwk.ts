@@ -42,53 +42,10 @@ export type NormalizedPublicKey = NormalizedPrivateKey;
  * metadata handy for the signing layer.
  */
 export function toPrivateKey(input: KeyInput): NormalizedPrivateKey {
-  if (input instanceof KeyObject) {
-    if (input.type === 'secret') {
-      return {
-        keyObject: input,
-        asymmetricKeyType: 'oct',
-        curve: null,
-      };
-    }
-    if (input.type !== 'private') {
-      throw new JsfKeyError('KeyObject must be a private key for signing');
-    }
-    return describeAsymmetric(input);
-  }
-
-  if (typeof input === 'string') {
-    const trimmed = input.trim();
-    if (trimmed.startsWith('{')) {
-      return toPrivateKey(parseJwk(trimmed));
-    }
-    const keyObject = createPrivateKey({ key: trimmed, format: 'pem' });
-    return describeAsymmetric(keyObject);
-  }
-
-  if (Buffer.isBuffer(input) || input instanceof Uint8Array) {
-    // Buffers are only ever HMAC key material. Asymmetric key imports
-    // go through PEM or JWK because DER detection is ambiguous.
-    const secret = createSecretKey(Buffer.isBuffer(input) ? input : Buffer.from(input));
-    return { keyObject: secret, asymmetricKeyType: 'oct', curve: null };
-  }
-
-  // Must be a JWK-like object
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Earlier branches narrowed the input, but this is a runtime guard that protects against JS callers that bypass the declared KeyInput type.
-  if (typeof input === 'object' && input !== null && 'kty' in input) {
-    const jwk = input;
-    if (jwk.kty === 'oct') {
-      if (!jwk.k) {
-        throw new JsfKeyError('JWK oct requires a k property');
-      }
-      const secret = createSecretKey(Buffer.from(jwk.k, 'base64url'));
-      return { keyObject: secret, asymmetricKeyType: 'oct', curve: null };
-    }
-    // createPrivateKey with format:'jwk' needs the JWK to have the
-    // private parameters (d, p, q, dp, dq, qi for RSA; d for EC/OKP).
-    const keyObject = createPrivateKey({ key: jwk as unknown as Record<string, unknown>, format: 'jwk' });
-    return describeAsymmetric(keyObject);
-  }
-
+  if (input instanceof KeyObject) return privateFromKeyObject(input);
+  if (typeof input === 'string') return privateFromString(input);
+  if (isRawBytes(input)) return normalizedSecret(input);
+  if (isJwkInput(input)) return privateFromJwk(input);
   throw new JsfKeyError('Unsupported private key input');
 }
 
@@ -98,45 +55,10 @@ export function toPrivateKey(input: KeyInput): NormalizedPrivateKey {
  * is extracted from a private key), or HMAC bytes for symmetric alg.
  */
 export function toPublicKey(input: KeyInput): NormalizedPublicKey {
-  if (input instanceof KeyObject) {
-    if (input.type === 'secret') {
-      return { keyObject: input, asymmetricKeyType: 'oct', curve: null };
-    }
-    if (input.type === 'private') {
-      const pub = createPublicKey(input);
-      return describeAsymmetric(pub);
-    }
-    return describeAsymmetric(input);
-  }
-
-  if (typeof input === 'string') {
-    const trimmed = input.trim();
-    if (trimmed.startsWith('{')) {
-      return toPublicKey(parseJwk(trimmed));
-    }
-    const keyObject = createPublicKey({ key: trimmed, format: 'pem' });
-    return describeAsymmetric(keyObject);
-  }
-
-  if (Buffer.isBuffer(input) || input instanceof Uint8Array) {
-    const secret = createSecretKey(Buffer.isBuffer(input) ? input : Buffer.from(input));
-    return { keyObject: secret, asymmetricKeyType: 'oct', curve: null };
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers that bypass the declared KeyInput type.
-  if (typeof input === 'object' && input !== null && 'kty' in input) {
-    const jwk = input;
-    if (jwk.kty === 'oct') {
-      if (!jwk.k) {
-        throw new JsfKeyError('JWK oct requires a k property');
-      }
-      const secret = createSecretKey(Buffer.from(jwk.k, 'base64url'));
-      return { keyObject: secret, asymmetricKeyType: 'oct', curve: null };
-    }
-    const keyObject = createPublicKey({ key: jwk as unknown as Record<string, unknown>, format: 'jwk' });
-    return describeAsymmetric(keyObject);
-  }
-
+  if (input instanceof KeyObject) return publicFromKeyObject(input);
+  if (typeof input === 'string') return publicFromString(input);
+  if (isRawBytes(input)) return normalizedSecret(input);
+  if (isJwkInput(input)) return publicFromJwk(input);
   throw new JsfKeyError('Unsupported public key input');
 }
 
@@ -181,13 +103,76 @@ export function sanitizePublicJwk(raw: Record<string, unknown>): JwkPublicKey {
   throw new JsfKeyError(`Unsupported JWK kty: ${String(kty)}`);
 }
 
-function requireFields(raw: Record<string, unknown>, fields: string[], kty: string): void {
-  for (const field of fields) {
-    // eslint-disable-next-line security/detect-object-injection -- `field` is a caller-supplied constant list of JWK member names (for example ['n', 'e']).
-    if (raw[field] === undefined || raw[field] === null || raw[field] === '') {
-      throw new JsfKeyError(`JWK ${kty} missing required field ${field}`);
-    }
+// -- Dispatchers for each input kind ------------------------------------------
+
+function privateFromKeyObject(input: KeyObject): NormalizedPrivateKey {
+  if (input.type === 'secret') {
+    return { keyObject: input, asymmetricKeyType: 'oct', curve: null };
   }
+  if (input.type !== 'private') {
+    throw new JsfKeyError('KeyObject must be a private key for signing');
+  }
+  return describeAsymmetric(input);
+}
+
+function publicFromKeyObject(input: KeyObject): NormalizedPublicKey {
+  if (input.type === 'secret') {
+    return { keyObject: input, asymmetricKeyType: 'oct', curve: null };
+  }
+  const pub = input.type === 'private' ? createPublicKey(input) : input;
+  return describeAsymmetric(pub);
+}
+
+function privateFromString(s: string): NormalizedPrivateKey {
+  const trimmed = s.trim();
+  if (trimmed.startsWith('{')) return privateFromJwk(parseJwk(trimmed));
+  return describeAsymmetric(createPrivateKey({ key: trimmed, format: 'pem' }));
+}
+
+function publicFromString(s: string): NormalizedPublicKey {
+  const trimmed = s.trim();
+  if (trimmed.startsWith('{')) return publicFromJwk(parseJwk(trimmed));
+  return describeAsymmetric(createPublicKey({ key: trimmed, format: 'pem' }));
+}
+
+function privateFromJwk(jwk: JwkPublicKey): NormalizedPrivateKey {
+  if (jwk.kty === 'oct') return secretFromOctJwk(jwk);
+  // createPrivateKey with format:'jwk' needs the JWK to have the
+  // private parameters (d, p, q, dp, dq, qi for RSA; d for EC/OKP).
+  const keyObject = createPrivateKey({ key: jwk as unknown as Record<string, unknown>, format: 'jwk' });
+  return describeAsymmetric(keyObject);
+}
+
+function publicFromJwk(jwk: JwkPublicKey): NormalizedPublicKey {
+  if (jwk.kty === 'oct') return secretFromOctJwk(jwk);
+  const keyObject = createPublicKey({ key: jwk as unknown as Record<string, unknown>, format: 'jwk' });
+  return describeAsymmetric(keyObject);
+}
+
+// -- Low-level helpers --------------------------------------------------------
+
+function isRawBytes(input: unknown): input is Buffer | Uint8Array {
+  return Buffer.isBuffer(input) || input instanceof Uint8Array;
+}
+
+function isJwkInput(input: unknown): input is JwkPublicKey {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers that bypass the declared KeyInput type.
+  return typeof input === 'object' && input !== null && 'kty' in input;
+}
+
+function normalizedSecret(bytes: Buffer | Uint8Array): NormalizedPrivateKey {
+  // Buffers are only ever HMAC key material. Asymmetric key imports
+  // go through PEM or JWK because DER detection is ambiguous.
+  const secret = createSecretKey(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
+  return { keyObject: secret, asymmetricKeyType: 'oct', curve: null };
+}
+
+function secretFromOctJwk(jwk: JwkPublicKey): NormalizedPrivateKey {
+  if (!jwk.k) {
+    throw new JsfKeyError('JWK oct requires a k property');
+  }
+  const secret = createSecretKey(Buffer.from(jwk.k, 'base64url'));
+  return { keyObject: secret, asymmetricKeyType: 'oct', curve: null };
 }
 
 function describeAsymmetric(keyObject: KeyObject): NormalizedPrivateKey {
@@ -195,18 +180,17 @@ function describeAsymmetric(keyObject: KeyObject): NormalizedPrivateKey {
   if (!asymmetricKeyType) {
     throw new JsfKeyError('KeyObject does not expose an asymmetric key type');
   }
-  let curve: string | null = null;
+  return { keyObject, asymmetricKeyType, curve: curveOf(keyObject, asymmetricKeyType) };
+}
+
+function curveOf(keyObject: KeyObject, asymmetricKeyType: string): string | null {
   if (asymmetricKeyType === 'ec') {
     // Node exposes the named curve on the key details.
-    const details = keyObject.asymmetricKeyDetails;
-    const node = details?.namedCurve;
-    curve = nodeCurveToJwk(node ?? null);
-  } else if (asymmetricKeyType === 'ed25519') {
-    curve = 'Ed25519';
-  } else if (asymmetricKeyType === 'ed448') {
-    curve = 'Ed448';
+    return nodeCurveToJwk(keyObject.asymmetricKeyDetails?.namedCurve ?? null);
   }
-  return { keyObject, asymmetricKeyType, curve };
+  if (asymmetricKeyType === 'ed25519') return 'Ed25519';
+  if (asymmetricKeyType === 'ed448') return 'Ed448';
+  return null;
 }
 
 function nodeCurveToJwk(node: string | null): string | null {
@@ -231,5 +215,14 @@ function parseJwk(text: string): JwkPublicKey {
     return JSON.parse(text) as JwkPublicKey;
   } catch (err) {
     throw new JsfKeyError(`Invalid JWK JSON: ${(err as Error).message}`);
+  }
+}
+
+function requireFields(raw: Record<string, unknown>, fields: string[], kty: string): void {
+  for (const field of fields) {
+    // eslint-disable-next-line security/detect-object-injection -- `field` is a caller-supplied constant list of JWK member names (for example ['n', 'e']).
+    if (raw[field] === undefined || raw[field] === null || raw[field] === '') {
+      throw new JsfKeyError(`JWK ${kty} missing required field ${field}`);
+    }
   }
 }

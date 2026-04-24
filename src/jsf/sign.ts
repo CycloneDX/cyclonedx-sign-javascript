@@ -74,20 +74,10 @@ const DEFAULT_SIGNATURE_PROPERTY = 'signature';
  * The input payload is not mutated.
  */
 export function sign(payload: JsonObject, options: JsfSignOptions): JsonObject {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers that bypass the JsonObject declared type.
-  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new JsfInputError('JSF sign requires a JSON object payload');
-  }
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers that pass null or a non-object in place of options.
-  if (!options || typeof options !== 'object') {
-    throw new JsfInputError('JSF sign requires an options object');
-  }
-  if (!isRegisteredAlgorithm(options.algorithm)) {
-    throw new JsfInputError(`Unsupported algorithm: ${options.algorithm as string}`);
-  }
+  assertPayloadShape(payload, 'sign');
+  assertSignOptions(options);
 
   const signatureProperty = options.signatureProperty ?? DEFAULT_SIGNATURE_PROPERTY;
-
   if (signatureProperty in payload) {
     throw new JsfInputError(
       `Payload already has a "${signatureProperty}" property; refusing to overwrite`,
@@ -97,38 +87,7 @@ export function sign(payload: JsonObject, options: JsfSignOptions): JsonObject {
   const spec = getAlgorithmSpec(options.algorithm);
   const { keyObject: privateKeyObject, curve: privateCurve } = toPrivateKey(options.privateKey);
 
-  // Construct the signer metadata (without value). Order in this
-  // literal is irrelevant because JCS re-sorts keys by code unit.
-  const signer: JsfSigner = {
-    algorithm: options.algorithm,
-    value: '', // placeholder; removed for canonicalization
-  };
-  if (options.keyId !== undefined) {
-    if (typeof options.keyId !== 'string' || options.keyId.length === 0) {
-      throw new JsfInputError('keyId must be a non-empty string when provided');
-    }
-    signer.keyId = options.keyId;
-  }
-  if (options.certificatePath !== undefined) {
-    if (!Array.isArray(options.certificatePath) || options.certificatePath.length === 0) {
-      throw new JsfInputError('certificatePath must be a non-empty array when provided');
-    }
-    signer.certificatePath = [...options.certificatePath];
-  }
-  if (options.excludes !== undefined) {
-    if (!Array.isArray(options.excludes)) {
-      throw new JsfInputError('excludes must be an array when provided');
-    }
-    signer.excludes = [...options.excludes];
-  }
-
-  // Decide whether to embed a publicKey. HMAC envelopes never embed.
-  const embedPublicKey = resolveEmbeddedPublicKey(options, spec.family);
-  if (embedPublicKey) {
-    signer.publicKey = embedPublicKey;
-  }
-
-  // Compose the view of the payload that will be signed.
+  const signer = buildSigner(options, spec.family);
   const toSign = buildCanonicalView(payload, signer, signatureProperty);
   const canonicalBytes = canonicalize(toSign);
 
@@ -143,6 +102,51 @@ export function sign(payload: JsonObject, options: JsfSignOptions): JsonObject {
 }
 
 /**
+ * Validate the top-level shape and required fields of JsfSignOptions.
+ * Splits out from sign() so the outer function stays straight line.
+ */
+function assertSignOptions(options: JsfSignOptions): void {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers that pass null or a non-object in place of options.
+  if (!options || typeof options !== 'object') {
+    throw new JsfInputError('JSF sign requires an options object');
+  }
+  if (!isRegisteredAlgorithm(options.algorithm)) {
+    throw new JsfInputError(`Unsupported algorithm: ${options.algorithm as string}`);
+  }
+  if (options.keyId !== undefined && (typeof options.keyId !== 'string' || options.keyId.length === 0)) {
+    throw new JsfInputError('keyId must be a non-empty string when provided');
+  }
+  if (options.certificatePath !== undefined && (!Array.isArray(options.certificatePath) || options.certificatePath.length === 0)) {
+    throw new JsfInputError('certificatePath must be a non-empty array when provided');
+  }
+  if (options.excludes !== undefined && !Array.isArray(options.excludes)) {
+    throw new JsfInputError('excludes must be an array when provided');
+  }
+}
+
+/**
+ * Construct the signer metadata object (minus `value`) from sign options
+ * and the algorithm family. Property order inside the literal is
+ * irrelevant because JCS re-sorts keys by code unit.
+ */
+function buildSigner(
+  options: JsfSignOptions,
+  family: 'rsa-pkcs1' | 'rsa-pss' | 'ecdsa' | 'eddsa' | 'hmac',
+): JsfSigner {
+  const signer: JsfSigner = {
+    algorithm: options.algorithm,
+    value: '', // placeholder; removed for canonicalization
+  };
+  if (options.keyId !== undefined) signer.keyId = options.keyId;
+  if (options.certificatePath !== undefined) signer.certificatePath = [...options.certificatePath];
+  if (options.excludes !== undefined) signer.excludes = [...options.excludes];
+
+  const embedPublicKey = resolveEmbeddedPublicKey(options, family);
+  if (embedPublicKey) signer.publicKey = embedPublicKey;
+  return signer;
+}
+
+/**
  * Verify a JSF-signed object.
  *
  * Returns a structured result with valid=false when the signature does
@@ -151,69 +155,29 @@ export function sign(payload: JsonObject, options: JsfSignOptions): JsonObject {
  * bugs, never for cryptographic failures.
  */
 export function verify(payload: JsonObject, options: JsfVerifyOptions = {}): JsfVerifyResult {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers that bypass the JsonObject declared type.
-  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new JsfInputError('JSF verify requires a JSON object payload');
-  }
-
+  assertPayloadShape(payload, 'verify');
   const signatureProperty = options.signatureProperty ?? DEFAULT_SIGNATURE_PROPERTY;
-  // eslint-disable-next-line security/detect-object-injection -- `signatureProperty` is the documented signer location and defaults to the "signature" literal.
-  const signerAny = payload[signatureProperty];
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- with noUncheckedIndexedAccess, payload[signatureProperty] is string | undefined; this guard is load bearing.
-  if (signerAny === undefined) {
-    throw new JsfEnvelopeError(`Payload has no "${signatureProperty}" property`);
-  }
-  if (signerAny === null || Array.isArray(signerAny) || typeof signerAny !== 'object') {
-    throw new JsfEnvelopeError(`"${signatureProperty}" property must be a signer object`);
-  }
-  const signer = signerAny as unknown as JsfSigner;
+  const signer = extractSigner(payload, signatureProperty);
+  const result = initialResultFromSigner(signer);
 
-  const result: JsfVerifyResult = { valid: false, errors: [] };
-
-  if (typeof signer.algorithm !== 'string' || signer.algorithm.length === 0) {
-    throw new JsfEnvelopeError('signer is missing algorithm');
-  }
-  if (typeof signer.value !== 'string' || signer.value.length === 0) {
-    throw new JsfEnvelopeError('signer is missing value');
-  }
-  result.algorithm = signer.algorithm;
-  if (signer.keyId !== undefined) result.keyId = signer.keyId;
-  if (signer.publicKey !== undefined) result.publicKey = signer.publicKey;
-  if (signer.certificatePath !== undefined) result.certificatePath = [...signer.certificatePath];
-  if (signer.excludes !== undefined) result.excludes = [...signer.excludes];
-
-  if (options.allowedAlgorithms && !options.allowedAlgorithms.includes(signer.algorithm)) {
-    result.errors.push(`algorithm ${signer.algorithm} is not on the allow-list`);
+  // Pre-flight option constraints before any cryptographic work.
+  const preflightError = preflightVerify(signer, options);
+  if (preflightError !== null) {
+    result.errors.push(preflightError);
     return result;
   }
 
-  if (!isRegisteredAlgorithm(signer.algorithm)) {
-    result.errors.push(`unsupported algorithm ${signer.algorithm}`);
-    return result;
-  }
   const spec = getAlgorithmSpec(signer.algorithm);
-
-  if (options.requireEmbeddedPublicKey && !signer.publicKey) {
-    result.errors.push('signer is missing an embedded publicKey');
-    return result;
-  }
-
   const verifyingKeyInput = resolveVerifyingKey(signer, options, spec.family);
   if (!verifyingKeyInput) {
     throw new JsfVerifyError(
       'No public key available: provide options.publicKey or include signer.publicKey',
     );
   }
-
   const { keyObject, curve } = toPublicKey(verifyingKeyInput);
 
-  let signatureBytes: Uint8Array;
-  try {
-    signatureBytes = decodeBase64Url(signer.value);
-  } catch (err) {
-    result.errors.push(`malformed signature value: ${(err as Error).message}`);
-    return result;
-  }
+  const signatureBytes = decodeSignatureValue(signer.value, result);
+  if (!signatureBytes) return result;
 
   const toVerify = buildCanonicalView(payload, signer, signatureProperty);
   const canonicalBytes = canonicalize(toVerify);
@@ -226,6 +190,73 @@ export function verify(payload: JsonObject, options: JsfVerifyOptions = {}): Jsf
 
   result.valid = true;
   return result;
+}
+
+/** Validate the top-level JSON shape; throw on structural problems. */
+function assertPayloadShape(payload: JsonObject, op: 'sign' | 'verify'): void {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers that bypass the JsonObject declared type.
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new JsfInputError(`JSF ${op} requires a JSON object payload`);
+  }
+}
+
+/** Read the signer from its property slot and validate its basic shape. */
+function extractSigner(payload: JsonObject, signatureProperty: string): JsfSigner {
+  // eslint-disable-next-line security/detect-object-injection -- `signatureProperty` is the documented signer location and defaults to the "signature" literal.
+  const signerAny = payload[signatureProperty];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- with noUncheckedIndexedAccess, payload[signatureProperty] is JsonValue | undefined; this guard is load bearing.
+  if (signerAny === undefined) {
+    throw new JsfEnvelopeError(`Payload has no "${signatureProperty}" property`);
+  }
+  if (signerAny === null || Array.isArray(signerAny) || typeof signerAny !== 'object') {
+    throw new JsfEnvelopeError(`"${signatureProperty}" property must be a signer object`);
+  }
+  const signer = signerAny as unknown as JsfSigner;
+  if (typeof signer.algorithm !== 'string' || signer.algorithm.length === 0) {
+    throw new JsfEnvelopeError('signer is missing algorithm');
+  }
+  if (typeof signer.value !== 'string' || signer.value.length === 0) {
+    throw new JsfEnvelopeError('signer is missing value');
+  }
+  return signer;
+}
+
+/** Seed a VerifyResult with the recoverable metadata from the signer. */
+function initialResultFromSigner(signer: JsfSigner): JsfVerifyResult {
+  const result: JsfVerifyResult = { valid: false, errors: [], algorithm: signer.algorithm };
+  if (signer.keyId !== undefined) result.keyId = signer.keyId;
+  if (signer.publicKey !== undefined) result.publicKey = signer.publicKey;
+  if (signer.certificatePath !== undefined) result.certificatePath = [...signer.certificatePath];
+  if (signer.excludes !== undefined) result.excludes = [...signer.excludes];
+  return result;
+}
+
+/**
+ * Run the cheap pre-flight checks before touching any crypto. Returns
+ * a user-facing error string to record in result.errors, or null when
+ * the verify should continue.
+ */
+function preflightVerify(signer: JsfSigner, options: JsfVerifyOptions): string | null {
+  if (options.allowedAlgorithms && !options.allowedAlgorithms.includes(signer.algorithm)) {
+    return `algorithm ${signer.algorithm} is not on the allow-list`;
+  }
+  if (!isRegisteredAlgorithm(signer.algorithm)) {
+    return `unsupported algorithm ${signer.algorithm}`;
+  }
+  if (options.requireEmbeddedPublicKey && !signer.publicKey) {
+    return 'signer is missing an embedded publicKey';
+  }
+  return null;
+}
+
+/** Decode the base64url signature value; record the error and return null on malformed input. */
+function decodeSignatureValue(value: string, result: JsfVerifyResult): Uint8Array | null {
+  try {
+    return decodeBase64Url(value);
+  } catch (err) {
+    result.errors.push(`malformed signature value: ${(err as Error).message}`);
+    return null;
+  }
 }
 
 /**
