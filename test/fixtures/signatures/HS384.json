@@ -1,0 +1,23 @@
+{
+  "subject": "assessment-42",
+  "issuedAt": "2026-04-20T10:00:00Z",
+  "claims": [
+    {
+      "id": "c1",
+      "status": "pass"
+    },
+    {
+      "id": "c2",
+      "status": "pass",
+      "notes": "reviewed"
+    }
+  ],
+  "meta": {
+    "version": "1.0.0",
+    "source": "assessors-studio"
+  },
+  "signature": {
+    "algorithm": "HS384",
+    "value": "oGBWeQUqFyIUlR79Xfmjaq-69XmBt1-2tSHDUCilbVnAl-Ym2TR59ggts9j9YGRM"
+  }
+}

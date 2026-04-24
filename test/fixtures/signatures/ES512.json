@@ -1,0 +1,29 @@
+{
+  "subject": "assessment-42",
+  "issuedAt": "2026-04-20T10:00:00Z",
+  "claims": [
+    {
+      "id": "c1",
+      "status": "pass"
+    },
+    {
+      "id": "c2",
+      "status": "pass",
+      "notes": "reviewed"
+    }
+  ],
+  "meta": {
+    "version": "1.0.0",
+    "source": "assessors-studio"
+  },
+  "signature": {
+    "algorithm": "ES512",
+    "value": "AE3Wp2abS6GYvOFdM4VVOBWqmMDXjK-q1ou1LlXyILZvd8yyWPR1gd07cGXSTMBIGEsFPLgzx8g3QuEyPs5rHP_PAf0TGuCI-R-zA_dQwlJSekebyU7f7uEeIps4AYbC62fPMplTt12zEOHN-10zq_GntijV1i96dKo9O9p2qBt4vz8S",
+    "publicKey": {
+      "kty": "EC",
+      "crv": "P-521",
+      "x": "APjR6S7kZJ2Fk5UDjO-lEJEKIkNNmg3rDigg0sNmln6wcrFIFVO6XNr7XAf6ha17bjJnq7zUBKzsAzAvXQuwCjKV",
+      "y": "AUYz9QOg7GD4LnEcZeSvev-8G29HNL2qBopYPZK88bP5R0fzUDpDA5nd8JQsTmUbGVkThGf9syvXKA68lgWIv-yF"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "subject": "assessment-42",
+  "issuedAt": "2026-04-20T10:00:00Z",
+  "claims": [
+    {
+      "id": "c1",
+      "status": "pass"
+    },
+    {
+      "id": "c2",
+      "status": "pass",
+      "notes": "reviewed"
+    }
+  ],
+  "meta": {
+    "version": "1.0.0",
+    "source": "assessors-studio"
+  },
+  "signature": {
+    "algorithm": "PS256",
+    "value": "uw-EBpJvMQLrwk0rtFvVlLH0zugMkQibHP__0fjbL2pmL_O0_Tap4gsJr5GPoNUcMC6cFPZCNfdUmTtk59ybd8xyFz8PvXhAy_YTrJoMLF8Z6blbaXhBcy_AyhET55KxdarawgY-h88Zo-RCMU2rLabHk3D6x9cGpYH0yLkTzuCzuPUmR-HPuql2Fj171X95XkqrwA9K3cVLjLVQfIVw3b32scQ7SfmbwAfvVsbcHuohz64-3ubrcBqyM-X_zoPXwmTprty536_M92kbc3aoAB5N_Cf7oFzEVDkOcBwmdgZcRvTveu5Z5vodJFrsLFDy34pAOvYG8n7Be-3ZXr1FdA",
+    "publicKey": {
+      "kty": "RSA",
+      "n": "wyZ1jboDAptgKUO8e64cx57pGyoyLM_9eEAmFgHFHw-A1fbVfDqmjQEMO6TCLN1HArwgLf5aIY8c7hioN3_V1xurKUIBGE10--o7x0EfapOiC7W3kj2YecP4u6zR6L4eNfhR6Hu37sxSWgguHpmhJDZ-L-cLbXxwXiQ4Dj9bEOCxGcAp7EUX7D3BsEKm62PE7x5hePjxN_DfigQ_i1WcyUJm-OsVHxmZIOkJOjNG_WepPpR78V5A7Z2jB5bxe-StJTi4epPuvadRXE1GsYRLRy8rFtQcKKgPQ1PSISR2LYbOk-nGBQ7W2gFuD-msjpkEcUHLDW8nT81R_YEeUlbHgQ",
+      "e": "AQAB"
+    }
+  }
+}
