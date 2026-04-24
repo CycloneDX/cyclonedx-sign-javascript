@@ -1,0 +1,51 @@
+---
+# Codacy analysis configuration for @cyclonedx/sign.
+#
+# Docs: https://docs.codacy.com/repositories-configure/codacy-configuration-file/
+
+engines:
+  # TSLint has been deprecated by its authors since 2019 in favor of
+  # typescript-eslint. Running both only produces redundant findings
+  # (and TSLint flags a lot of style opinions we do not follow, such
+  # as only-arrow-functions, object-literal-sort-keys, and
+  # no-magic-numbers on cryptographic constants).
+  tslint:
+    enabled: false
+
+  # This project does not use Prettier. Both plain Prettier and the
+  # Prettier-Vue plugin produce formatting complaints that conflict
+  # with the repo's own style.
+  prettier:
+    enabled: false
+
+  # This project does not use Biome. Its findings overlap with ESLint.
+  biome:
+    enabled: false
+
+  # markdownlint stays on but we relax MD034 (bare URLs) in the
+  # README's "Related specifications" section via line pragmas.
+
+  # ESLint 8 and Lizard (complexity) stay on. They surface the
+  # genuinely actionable findings.
+
+exclude_paths:
+  # Generated build output.
+  - dist/**
+  - node_modules/**
+
+  # Generated lockfile.
+  - package-lock.json
+
+  # Fixture generator script. One-shot build tool, not shipped code;
+  # it imports from dist/ at runtime and writes committed fixture
+  # files. Analyzers flag non-literal fs access and "unsupported
+  # ESM syntax" here, neither of which is actionable.
+  - test/fixtures/jsf/build-envelopes.mjs
+
+  # Committed fixture data (test envelopes, PEM keys, interop corpus).
+  - test/fixtures/**/*.json
+  - test/fixtures/**/*.pem
+
+  # The coverage output directory once step 3 of the Codacy grade
+  # plan lands.
+  - coverage/**
