@@ -3,11 +3,6 @@
  *
  * This module holds only the types that are neutral across JSF and JSS.
  * Format-specific types live in ./jsf/types.ts and ./jss/types.ts.
- *
- * The JSF-specific names that previously lived here (JsfAlgorithm,
- * JsfSigner, SignOptions, VerifyOptions, VerifyResult, JsfJwkKeyType,
- * JsfPublicKey) are re-exported at the bottom of this file so existing
- * consumers that import from `./types.js` continue to work unchanged.
  */
 
 import type { KeyObject } from 'node:crypto';
@@ -61,27 +56,26 @@ export interface JwkPublicKey {
 export type KeyInput = JwkPublicKey | string | Buffer | Uint8Array | KeyObject;
 
 /**
- * Signature format discriminator used by the top-level
- * sign / verify / signBom / verifyBom API.
+ * CycloneDX major version. This is the primary discriminator exposed by
+ * the top-level sign() and verify() functions. The library maps the
+ * major version onto the right JSON signing format:
  *
- *   'jsf' — JSON Signature Format. Used by CycloneDX 1.x.
- *   'jss' — JSON Signature Schema (X.590). Used by CycloneDX 2.x.
+ *   V1 -> JSF (JSON Signature Format, 0.82)
+ *   V2 -> JSS (JSON Signature Schema, X.590)
+ *
+ * Using the CycloneDX major version rather than the underlying format
+ * name lets tool authors think in terms of their specification target
+ * and avoids leaking signing-format vocabulary into the call site.
+ */
+export enum CycloneDxMajor {
+  V1 = 1,
+  V2 = 2,
+}
+
+/**
+ * Signature format discriminator. This is an internal concept that
+ * still surfaces through the detectFormat() utility and the ./jsf and
+ * ./jss subpath imports. Most callers should prefer CycloneDxMajor on
+ * the top-level API.
  */
 export type SignatureFormat = 'jsf' | 'jss';
-
-// -- Backward-compatibility re-exports ---------------------------------------
-// These were previously defined in this file. They now live alongside the
-// format they belong to, but the old import paths keep working.
-
-export type { JsfAlgorithm, JsfSigner } from './jsf/types.js';
-export type {
-  JsfSignOptions as SignOptions,
-  JsfVerifyOptions as VerifyOptions,
-  JsfVerifyResult as VerifyResult,
-} from './jsf/types.js';
-
-/** @deprecated Use JwkKeyType. */
-export type JsfJwkKeyType = JwkKeyType;
-
-/** @deprecated Use JwkPublicKey. */
-export type JsfPublicKey = JwkPublicKey;

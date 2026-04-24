@@ -73,7 +73,7 @@ const DEFAULT_SIGNATURE_PROPERTY = 'signature';
  *
  * The input payload is not mutated.
  */
-export function signJsf(payload: JsonObject, options: JsfSignOptions): JsonObject {
+export function sign(payload: JsonObject, options: JsfSignOptions): JsonObject {
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new JsfInputError('JSF sign requires a JSON object payload');
   }
@@ -147,7 +147,7 @@ export function signJsf(payload: JsonObject, options: JsfSignOptions): JsonObjec
  * (JsfEnvelopeError / JsfInputError / JsfVerifyError) only for caller
  * bugs, never for cryptographic failures.
  */
-export function verifyJsf(payload: JsonObject, options: JsfVerifyOptions = {}): JsfVerifyResult {
+export function verify(payload: JsonObject, options: JsfVerifyOptions = {}): JsfVerifyResult {
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new JsfInputError('JSF verify requires a JSON object payload');
   }
@@ -231,7 +231,7 @@ export function verifyJsf(payload: JsonObject, options: JsfVerifyOptions = {}): 
  * The signer argument is used to determine `excludes`; the signer
  * object itself is attached under signatureProperty minus `value`.
  */
-export function computeJsfCanonicalInput(
+export function computeCanonicalInput(
   payload: JsonObject,
   signer: Omit<JsfSigner, 'value'> & { value?: string },
   signatureProperty: string = DEFAULT_SIGNATURE_PROPERTY,

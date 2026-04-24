@@ -7,35 +7,42 @@
  * can target both CycloneDX 1.x (JSF) and CycloneDX 2.x (JSS) through
  * a single dependency.
  *
- * The top-level sign / verify / signBom / verifyBom route to the
- * underlying format based on:
+ * The top-level sign() and verify() dispatch to the right format based
+ * on the CycloneDxMajor enum passed in options.cyclonedxVersion:
  *
- *   1. An explicit options.format ('jsf' or 'jss').
- *   2. For BOMs, the value of bom.specVersion.
- *   3. For verify, the shape of the envelope.
- *   4. Defaulting to JSF when no signal is available.
+ *   CycloneDxMajor.V1 -> JSF
+ *   CycloneDxMajor.V2 -> JSS
  *
- * Example: generic sign and verify
+ * Defaulting to V1 when cyclonedxVersion is omitted.
  *
- *     import { sign, verify } from '@cyclonedx/sign';
+ * The subject passed to sign() / verify() can be the whole BOM or any
+ * JSON object inside it. The library does not inspect BOM structure;
+ * the caller is responsible for handing in the exact object they want
+ * signed or verified.
  *
- *     const signed = sign(
- *       { statement: 'hello world' },
- *       { algorithm: 'ES256', privateKey: ecPem }
- *     );
- *     const result = verify(signed);
- *     result.valid;   // true
- *     result.format;  // 'jsf'
+ * Example: sign a whole BOM
  *
- * Example: the CycloneDX BOM helper
+ *     import { sign, CycloneDxMajor } from '@cyclonedx/sign';
  *
- *     import { signBom, verifyBom } from '@cyclonedx/sign';
+ *     const signedBom = sign(bom, {
+ *       cyclonedxVersion: CycloneDxMajor.V1,
+ *       algorithm: 'ES256',
+ *       privateKey: ecPem,
+ *     });
  *
- *     // For a CycloneDX 1.x BOM this routes to JSF automatically.
- *     const signedBom = signBom(bom, { algorithm: 'ES256', privateKey });
- *     const result = verifyBom(signedBom);
- *     result.valid;   // true
- *     result.format;  // 'jsf' or 'jss' depending on bom.specVersion
+ * Example: sign a sub-object (declarations block) in place
+ *
+ *     bom.declarations = sign(bom.declarations, {
+ *       cyclonedxVersion: CycloneDxMajor.V1,
+ *       algorithm: 'ES256',
+ *       privateKey,
+ *     });
+ *
+ * Example: verify
+ *
+ *     const result = verify(signedBom, { cyclonedxVersion: CycloneDxMajor.V1 });
+ *     result.valid;              // true
+ *     result.cyclonedxVersion;   // CycloneDxMajor.V1
  *
  * Example: JCS canonical bytes without the envelope
  *
@@ -48,10 +55,8 @@
 export {
   sign,
   verify,
-  signBom,
-  verifyBom,
   detectFormat,
-  inferFormatFromBom,
+  cyclonedxFormat,
 } from './format-helper.js';
 
 export type {
@@ -65,20 +70,14 @@ export type {
 // format-specific call sites without the helper in the middle:
 //
 //     import { jsf } from '@cyclonedx/sign';
-//     jsf.signJsf(payload, options);
+//     jsf.sign(payload, options);
+//
+// Or import directly from the subpath:
+//
+//     import { sign, verify } from '@cyclonedx/sign/jsf';
 
 export * as jsf from './jsf/index.js';
 export * as jss from './jss/index.js';
-
-// Format-specific functions are also exported flat for convenience.
-export { signJsf, verifyJsf, computeJsfCanonicalInput } from './jsf/index.js';
-export { signJss, verifyJss } from './jss/index.js';
-
-// -- Back-compat with the previous @cyclonedx/jsf top level ------------------
-// Callers who were importing computeCanonicalInput from the old package
-// still get it here.
-
-export { computeJsfCanonicalInput as computeCanonicalInput } from './jsf/index.js';
 
 // -- Shared utilities --------------------------------------------------------
 
@@ -94,27 +93,6 @@ export {
   toPrivateKey,
   toPublicKey,
 } from './jwk.js';
-
-// -- JSF algorithm registry (re-exported for back compat) --------------------
-
-export {
-  getAlgorithmSpec,
-  isRegisteredAlgorithm,
-  isAsymmetricAlgorithm,
-  signBytes,
-  verifyBytes,
-  JSF_ASYMMETRIC_ALGORITHMS,
-} from './jsf/algorithms.js';
-
-export type {
-  AlgorithmSpec,
-  RsaPkcs1Spec,
-  RsaPssSpec,
-  EcdsaSpec,
-  EddsaSpec,
-  HmacSpec,
-  JsfAsymmetricAlgorithm,
-} from './jsf/algorithms.js';
 
 // -- Errors ------------------------------------------------------------------
 
@@ -135,6 +113,8 @@ export {
 
 // -- Shared types ------------------------------------------------------------
 
+export { CycloneDxMajor } from './types.js';
+
 export type {
   JsonObject,
   JsonValue,
@@ -142,30 +122,7 @@ export type {
   JwkPublicKey,
   KeyInput,
   SignatureFormat,
-  // Back-compat type names from @cyclonedx/jsf.
-  JsfJwkKeyType,
-  JsfPublicKey,
 } from './types.js';
-
-// -- JSF types ---------------------------------------------------------------
-
-export type {
-  JsfAlgorithm,
-  JsfSigner,
-  JsfSignOptions,
-  JsfVerifyOptions,
-  JsfVerifyResult,
-} from './jsf/types.js';
-
-// -- JSS types ---------------------------------------------------------------
-
-export type {
-  JssAlgorithm,
-  JssSigner,
-  JssSignOptions,
-  JssVerifyOptions,
-  JssVerifyResult,
-} from './jss/types.js';
 
 // -- JWK normalization types -------------------------------------------------
 

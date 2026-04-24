@@ -1,11 +1,13 @@
 /**
- * Tests for the top-level format helper: sign, verify, signBom,
- * verifyBom, and the JSS stub throwing JssNotImplementedError.
+ * Tests for the top-level format helper: sign, verify, detectFormat,
+ * and the JSS stub throwing JssNotImplementedError.
  *
- * These cover the ergonomics of the top-level helpers that tool
- * authors will rely on: a single call site that chooses JSF or JSS
- * based on either an explicit format option or the CycloneDX
- * specVersion.
+ * The helper treats the caller as the authority on which CycloneDX
+ * major version is in play (and therefore which signing format to
+ * use). It never inspects BOM structure. These tests cover three
+ * shapes of call: signing the whole BOM, signing a sub-object of a
+ * BOM (for example a declarations block), and signing arbitrary JSON
+ * without a BOM wrapper.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -14,13 +16,11 @@ import { generateKeyPairSync, type KeyObject } from 'node:crypto';
 import {
   sign,
   verify,
-  signBom,
-  verifyBom,
   detectFormat,
-  inferFormatFromBom,
-  signJss,
-  verifyJss,
+  cyclonedxFormat,
+  CycloneDxMajor,
 } from '../src/index.js';
+import { sign as signJss, verify as verifyJss } from '../src/jss/index.js';
 import { JssNotImplementedError, SignatureError, JsfError } from '../src/errors.js';
 import type { JsonObject } from '../src/types.js';
 
@@ -34,7 +34,7 @@ function ecPair(): KeyPair {
 }
 
 describe('sign and verify', () => {
-  it('defaults to JSF when format is omitted', () => {
+  it('defaults to V1 (JSF) when cyclonedxVersion is omitted', () => {
     const { privateKey } = ecPair();
     const signed = sign(
       { hello: 'world' },
@@ -43,41 +43,41 @@ describe('sign and verify', () => {
     expect(signed.signature).toBeDefined();
     const result = verify(signed);
     expect(result.valid).toBe(true);
-    expect(result.format).toBe('jsf');
+    expect(result.cyclonedxVersion).toBe(CycloneDxMajor.V1);
   });
 
-  it('routes to JSF when format=jsf is explicit', () => {
+  it('routes to JSF when cyclonedxVersion is V1', () => {
     const { privateKey } = ecPair();
     const signed = sign(
       { hello: 'world' },
-      { format: 'jsf', algorithm: 'ES256', privateKey },
+      { cyclonedxVersion: CycloneDxMajor.V1, algorithm: 'ES256', privateKey },
     );
-    const result = verify(signed, { format: 'jsf' });
+    const result = verify(signed, { cyclonedxVersion: CycloneDxMajor.V1 });
     expect(result.valid).toBe(true);
-    expect(result.format).toBe('jsf');
+    expect(result.cyclonedxVersion).toBe(CycloneDxMajor.V1);
   });
 
-  it('routes to the JSS stub when format=jss is explicit', () => {
+  it('routes to the JSS stub when cyclonedxVersion is V2', () => {
     const { privateKey } = ecPair();
     expect(() =>
       sign(
         { hello: 'world' },
-        { format: 'jss', algorithm: 'ES256', privateKey },
+        { cyclonedxVersion: CycloneDxMajor.V2, algorithm: 'ES256', privateKey },
       ),
     ).toThrow(JssNotImplementedError);
   });
 
-  it('detects JSF on verify without an explicit format', () => {
+  it('detects JSF on verify without an explicit version', () => {
     const { privateKey } = ecPair();
     const signed = sign({ a: 1 }, { algorithm: 'ES256', privateKey });
     const result = verify(signed);
-    expect(result.format).toBe('jsf');
+    expect(result.cyclonedxVersion).toBe(CycloneDxMajor.V1);
     expect(result.valid).toBe(true);
   });
 });
 
-describe('signBom and verifyBom', () => {
-  it('routes CycloneDX 1.x to JSF based on specVersion', () => {
+describe('signing CycloneDX shapes', () => {
+  it('signs a whole CycloneDX 1.x BOM', () => {
     const { privateKey } = ecPair();
     const bom: JsonObject = {
       bomFormat: 'CycloneDX',
@@ -85,45 +85,76 @@ describe('signBom and verifyBom', () => {
       version: 1,
       components: [],
     };
-    const signed = signBom(bom, { algorithm: 'ES256', privateKey });
+    const signed = sign(bom, {
+      cyclonedxVersion: CycloneDxMajor.V1,
+      algorithm: 'ES256',
+      privateKey,
+    });
     expect(signed.signature).toBeDefined();
-    const result = verifyBom(signed);
+    expect((signed.signature as { algorithm: string }).algorithm).toBe('ES256');
+    const result = verify(signed, { cyclonedxVersion: CycloneDxMajor.V1 });
     expect(result.valid).toBe(true);
-    expect(result.format).toBe('jsf');
   });
 
-  it('routes CycloneDX 2.x to the JSS stub based on specVersion', () => {
+  it('signs a sub-object of a BOM without touching the rest of the BOM', () => {
     const { privateKey } = ecPair();
     const bom: JsonObject = {
       bomFormat: 'CycloneDX',
-      specVersion: '2.0',
+      specVersion: '1.6',
       version: 1,
-      components: [],
+      components: [{ name: 'libfoo', version: '1.0.0' }] as unknown as JsonObject[] as unknown as JsonObject,
+      declarations: {
+        assessors: [{ name: 'Alice' }],
+      } as unknown as JsonObject,
     };
-    expect(() =>
-      signBom(bom, { algorithm: 'ES256', privateKey }),
-    ).toThrow(JssNotImplementedError);
+
+    // Sign just the declarations block, put it back.
+    const signedDecls = sign(bom.declarations as JsonObject, {
+      cyclonedxVersion: CycloneDxMajor.V1,
+      algorithm: 'ES256',
+      privateKey,
+    });
+    bom.declarations = signedDecls;
+
+    // The top-level BOM gained no signature.
+    expect(bom.signature).toBeUndefined();
+
+    // The declarations block has one.
+    expect((bom.declarations as JsonObject).signature).toBeDefined();
+
+    // Verify the sub-object's signature.
+    const result = verify(bom.declarations as JsonObject, {
+      cyclonedxVersion: CycloneDxMajor.V1,
+    });
+    expect(result.valid).toBe(true);
+
+    // Tamper with an unrelated BOM field. The sub-object signature
+    // still verifies because it is scoped to declarations.
+    (bom.components as unknown as Array<{ name: string }>)[0]!.name = 'libbar';
+    const result2 = verify(bom.declarations as JsonObject, {
+      cyclonedxVersion: CycloneDxMajor.V1,
+    });
+    expect(result2.valid).toBe(true);
   });
 
-  it('honours an explicit format override on signBom', () => {
+  it('signs a single signatory inside a BOM', () => {
     const { privateKey } = ecPair();
-    const bom: JsonObject = {
-      bomFormat: 'CycloneDX',
-      specVersion: '2.0',
-      version: 1,
-      components: [],
+    const signatory: JsonObject = {
+      name: 'Alice',
+      role: 'lead-assessor',
     };
-    // Force JSF even though specVersion suggests JSS. Useful for
-    // testing or for transitional tooling.
-    const signed = signBom(bom, { format: 'jsf', algorithm: 'ES256', privateKey });
+    const signed = sign(signatory, {
+      cyclonedxVersion: CycloneDxMajor.V1,
+      algorithm: 'ES256',
+      privateKey,
+    });
     expect(signed.signature).toBeDefined();
-    const result = verifyBom(signed, { format: 'jsf' });
+    const result = verify(signed, { cyclonedxVersion: CycloneDxMajor.V1 });
     expect(result.valid).toBe(true);
-    expect(result.format).toBe('jsf');
   });
 });
 
-describe('format detection helpers', () => {
+describe('format detection and conversion helpers', () => {
   it('detectFormat returns jsf for a JSF envelope', () => {
     const { privateKey } = ecPair();
     const signed = sign({ a: 1 }, { algorithm: 'ES256', privateKey });
@@ -135,25 +166,21 @@ describe('format detection helpers', () => {
     expect(detectFormat({ signature: { random: 'junk' } })).toBeNull();
   });
 
-  it('inferFormatFromBom maps specVersion major to format', () => {
-    expect(inferFormatFromBom({ specVersion: '1.4' })).toBe('jsf');
-    expect(inferFormatFromBom({ specVersion: '1.6' })).toBe('jsf');
-    expect(inferFormatFromBom({ specVersion: '2.0' })).toBe('jss');
-    expect(inferFormatFromBom({ specVersion: '3.1' })).toBe('jss');
-    expect(inferFormatFromBom({})).toBeNull();
-    expect(inferFormatFromBom({ specVersion: 'not-a-version' })).toBeNull();
+  it('cyclonedxFormat maps CycloneDxMajor to the internal format', () => {
+    expect(cyclonedxFormat(CycloneDxMajor.V1)).toBe('jsf');
+    expect(cyclonedxFormat(CycloneDxMajor.V2)).toBe('jss');
   });
 });
 
 describe('JSS stub surface', () => {
-  it('signJss throws JssNotImplementedError', () => {
+  it('JSS sign throws JssNotImplementedError', () => {
     const { privateKey } = ecPair();
     expect(() =>
       signJss({ a: 1 }, { algorithm: 'ES256', privateKey }),
     ).toThrow(JssNotImplementedError);
   });
 
-  it('verifyJss throws JssNotImplementedError', () => {
+  it('JSS verify throws JssNotImplementedError', () => {
     expect(() => verifyJss({ a: 1 }, {})).toThrow(JssNotImplementedError);
   });
 

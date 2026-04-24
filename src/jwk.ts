@@ -23,7 +23,7 @@
  */
 
 import { createPrivateKey, createPublicKey, createSecretKey, KeyObject } from 'node:crypto';
-import type { JsfPublicKey, KeyInput } from './types.js';
+import type { JwkPublicKey, KeyInput } from './types.js';
 import { JsfKeyError } from './errors.js';
 
 export interface NormalizedPrivateKey {
@@ -74,7 +74,7 @@ export function toPrivateKey(input: KeyInput): NormalizedPrivateKey {
 
   // Must be a JWK-like object
   if (typeof input === 'object' && input !== null && 'kty' in (input as object)) {
-    const jwk = input as JsfPublicKey;
+    const jwk = input as JwkPublicKey;
     if (jwk.kty === 'oct') {
       if (!jwk.k) {
         throw new JsfKeyError('JWK oct requires a k property');
@@ -123,7 +123,7 @@ export function toPublicKey(input: KeyInput): NormalizedPublicKey {
   }
 
   if (typeof input === 'object' && input !== null && 'kty' in (input as object)) {
-    const jwk = input as JsfPublicKey;
+    const jwk = input as JwkPublicKey;
     if (jwk.kty === 'oct') {
       if (!jwk.k) {
         throw new JsfKeyError('JWK oct requires a k property');
@@ -142,7 +142,7 @@ export function toPublicKey(input: KeyInput): NormalizedPublicKey {
  * Derive the publicKey JWK to embed in a JSF signer from any accepted
  * private or public key input.
  */
-export function exportPublicJwk(input: KeyInput): JsfPublicKey {
+export function exportPublicJwk(input: KeyInput): JwkPublicKey {
   const { keyObject, asymmetricKeyType } = toPublicKey(input);
   if (asymmetricKeyType === 'oct') {
     throw new JsfKeyError('HMAC keys must not be embedded in a JSF envelope');
@@ -156,7 +156,7 @@ export function exportPublicJwk(input: KeyInput): JsfPublicKey {
  * Downstream consumers can still round-trip a sanitized JWK through
  * Node because all required fields remain present.
  */
-export function sanitizePublicJwk(raw: Record<string, unknown>): JsfPublicKey {
+export function sanitizePublicJwk(raw: Record<string, unknown>): JwkPublicKey {
   const kty = raw.kty;
   if (kty === 'RSA') {
     requireFields(raw, ['n', 'e'], 'RSA');
@@ -223,9 +223,9 @@ function nodeCurveToJwk(node: string | null): string | null {
   }
 }
 
-function parseJwk(text: string): JsfPublicKey {
+function parseJwk(text: string): JwkPublicKey {
   try {
-    return JSON.parse(text) as JsfPublicKey;
+    return JSON.parse(text) as JwkPublicKey;
   } catch (err) {
     throw new JsfKeyError(`Invalid JWK JSON: ${(err as Error).message}`);
   }

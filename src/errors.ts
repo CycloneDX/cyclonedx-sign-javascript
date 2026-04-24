@@ -16,9 +16,6 @@
  *       ├── JssError
  *       │     └── JssNotImplementedError
  *       └── JcsError
- *
- * The Jsf* classes retain their previous names so existing consumers of
- * @cyclonedx/jsf can upgrade without touching their catch clauses.
  */
 
 /** Root of the package error hierarchy. */
