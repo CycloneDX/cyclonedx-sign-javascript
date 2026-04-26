@@ -1,6 +1,10 @@
-[![CI](https://github.com/CycloneDX/cyclonedx-sign-javascript/actions/workflows/ci.yml/badge.svg)](https://github.com/CycloneDX/cyclonedx-sign-javascript/actions/workflows/ci.yml)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/f0382a1f070941c68c4a18ed05f971cb)](https://app.codacy.com/gh/CycloneDX/cyclonedx-sign-javascript/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Codacy Badge](https://app.codacy.com/project/badge/Coverage/f0382a1f070941c68c4a18ed05f971cb)](https://app.codacy.com/gh/CycloneDX/cyclonedx-sign-javascript/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage)
+[![shield_npm-version]][link_npm]
+[![shield_gh-workflow-test]][link_gh-workflow-test]
+[![shield_coverage]][link_codacy]
+[![shield_license]][license_file]  
+[![shield_website]][link_website]
+[![shield_slack]][link_slack]
+[![shield_groups]][link_discussion]
 
 # @cyclonedx/sign
 
@@ -221,11 +225,29 @@ Catch `SignatureError` to trap everything the package throws. Catch a subtree (`
 
 ## License
 
-Apache License 2.0. See `LICENSE`.
+Apache License 2.0. See [LICENSE][license_file].
 
 ## Related specifications
 
-* JSF 0.82: <https://cyberphone.github.io/doc/security/jsf.html>
-* JSS (ITU-T X.590, 2023-10): <https://www.itu.int/epublications/publication/itu-t-x-590-2023-10-json-signature-scheme-jss>
-* JCS (RFC 8785): <https://datatracker.ietf.org/doc/html/rfc8785>
-* CycloneDX: <https://cyclonedx.org>
+* [JSF 0.82](https://cyberphone.github.io/doc/security/jsf.html)
+* [JSS (ITU-T X.590, 2023-10)](https://www.itu.int/epublications/publication/itu-t-x-590-2023-10-json-signature-scheme-jss)
+* [JCS (RFC 8785)](https://datatracker.ietf.org/doc/html/rfc8785)
+* [CycloneDX][link_website]
+
+[shield_gh-workflow-test]: https://img.shields.io/github/actions/workflow/status/CycloneDX/cyclonedx-sign-javascript/ci.yml?branch=main&logo=GitHub&logoColor=white "tests"
+[shield_coverage]: https://img.shields.io/codacy/coverage/f0382a1f070941c68c4a18ed05f971cb?logo=Codacy&logoColor=white "test coverage"
+[shield_npm-version]: https://img.shields.io/npm/v/%40cyclonedx%2fsign/latest?label=npm&logo=npm&logoColor=white "npm"
+[shield_license]: https://img.shields.io/github/license/CycloneDX/cyclonedx-sign-javascript?logo=open%20source%20initiative&logoColor=white "license"
+[shield_website]: https://img.shields.io/badge/https://-cyclonedx.org-blue.svg "homepage"
+[shield_slack]: https://img.shields.io/badge/slack-join-blue?logo=Slack&logoColor=white "slack join"
+[shield_groups]: https://img.shields.io/badge/discussion-groups.io-blue.svg "groups discussion"
+[shield_twitter-follow]: https://img.shields.io/badge/Twitter-follow-blue?logo=Twitter&logoColor=white "twitter follow"
+
+[license_file]: LICENSE
+[link_website]: https://cyclonedx.org/
+[link_gh-workflow-test]: https://github.com/CycloneDX/cyclonedx-sign-javascript/actions/workflows/ci.yml?query=branch%3Amain
+[link_codacy]: https://app.codacy.com/gh/CycloneDX/cyclonedx-sign-javascript/dashboard
+[link_ossf-best-practices]: https://www.bestpractices.dev/projects?q=cyclonedx-sign-javascript
+[link_npm]: https://www.npmjs.com/package/@cyclonedx/sign
+[link_slack]: https://cyclonedx.org/slack/invite
+[link_discussion]: https://groups.io/g/CycloneDX
