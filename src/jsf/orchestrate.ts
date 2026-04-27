@@ -77,10 +77,8 @@ export async function signEnvelope(input: JsfOrchestratorSignInput): Promise<Jso
     const view = binding.buildCanonicalView(payload, state, i, signatureProperty);
     const bytes = canonicalize(view);
     // eslint-disable-next-line security/detect-object-injection -- counted loop
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
     const sig = await signers[i]!.sign(bytes);
     // eslint-disable-next-line security/detect-object-injection -- counted loop
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
     state.signers[i]!.value = encodeBase64Url(sig);
     // eslint-disable-next-line security/detect-object-injection -- counted loop
     state.finalized[i] = true;
@@ -177,7 +175,6 @@ export async function verifyEnvelope(
   for (let i = 0; i < cores.length; i++) {
     // eslint-disable-next-line security/detect-object-injection -- counted loop
     const core = cores[i];
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
     if (!core) continue;
     envelopeErrors.push(
       ...checkSignatureCoreProperties(
@@ -192,7 +189,6 @@ export async function verifyEnvelope(
   const outcomes: JsfSignerVerifyOutcome[] = [];
   for (let i = 0; i < state.signers.length; i++) {
     // eslint-disable-next-line security/detect-object-injection -- counted loop
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
     const desc = state.signers[i]!;
     const outcome: JsfSignerVerifyOutcome = {
       index: i,
@@ -262,7 +258,6 @@ export async function verifyEnvelope(
     const bytes = canonicalize(view2);
     let ok = false;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
       ok = await verifier!.verify(bytes, signatureBytes);
     } catch (e) {
       outcome.errors.push(`verifier threw: ${(e as Error).message}`);

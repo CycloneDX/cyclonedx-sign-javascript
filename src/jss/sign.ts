@@ -215,9 +215,7 @@ export async function countersign(
   // The target must not already carry a counter signature: X.590
   // permits one nested `signature` per signaturecore. Counter-counter
   // signing recurses via the nested core's own `signature` property.
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion, security/detect-object-injection -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant; key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
   const targetDesc = view.signers[targetIndex]!;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition, security/detect-object-injection -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract; key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
   if (targetDesc.extensionValues && targetDesc.extensionValues[JSS_COUNTERSIG_KEY] !== undefined) {
     throw new JssInputError(
       'target signaturecore already has a counter signature; ' +
@@ -275,7 +273,6 @@ function stripCounterSig(
   ext: Record<string, JsonValue> | undefined,
 ): Record<string, JsonValue> | undefined {
   if (!ext) return undefined;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition, security/detect-object-injection -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract; key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
   if (ext[JSS_COUNTERSIG_KEY] === undefined) return ext;
   const out: Record<string, JsonValue> = {};
   for (const k of Object.keys(ext)) {
@@ -288,7 +285,6 @@ function stripCounterSig(
 
 function withCounterSig(target: JssSignerDescriptor, counter: JssSignerDescriptor): JssSignerDescriptor {
   const targetExt = { ...(target.extensionValues ?? {}) };
-  // eslint-disable-next-line security/detect-object-injection -- key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
   targetExt[JSS_COUNTERSIG_KEY] = renderSignaturecore(counter, { stripValue: true }) as unknown as JsonValue;
   return { ...target, extensionValues: targetExt };
 }
@@ -330,7 +326,6 @@ export async function verify(
   const outcomes: JssSignerVerifyResult[] = [];
   for (let i = 0; i < view.signers.length; i += 1) {
     // eslint-disable-next-line security/detect-object-injection -- counted loop index
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
     const desc = view.signers[i]!;
     const outcome = await verifyOne(stripped, desc, i, options, signatureProperty);
     outcomes.push(outcome);
@@ -354,7 +349,6 @@ async function verifyOne(
   signatureProperty: string,
 ): Promise<JssSignerVerifyResult> {
   const ext = desc.extensionValues ?? {};
-  // eslint-disable-next-line security/detect-object-injection -- key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
   const hashAlgorithm = (ext[JSS_HASH_ALGO_KEY] as string | undefined) ?? DEFAULT_HASH_ALGORITHM;
 
   const out: JssSignerVerifyResult = {
@@ -473,7 +467,6 @@ async function verifyOne(
 
   // Optionally verify the nested counter signature.
   if (options.verifyCounterSignatures) {
-    // eslint-disable-next-line security/detect-object-injection -- key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
     const counterWire = ext[JSS_COUNTERSIG_KEY];
     if (counterWire && typeof counterWire === 'object' && !Array.isArray(counterWire)) {
       const counterResult = await verifyCounterOne(
@@ -653,7 +646,6 @@ function collectSigners(options: JssSignOptions): JssSignerInput[] {
   if (hasOne && hasMany) {
     throw new JssInputError('Provide either `signer` or `signers`, not both');
   }
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
   if (hasOne) return [options.signer!];
   if (!hasMany || !options.signers || options.signers.length === 0) {
     throw new JssInputError('JSS sign requires at least one signer');
@@ -688,7 +680,6 @@ function validateSignerInput(input: JssSignerInput): void {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
 function extractExisting(payload: JsonObject, signatureProperty: string): JsonObject[] {
   // eslint-disable-next-line security/detect-object-injection -- caller-controlled
   const slot = payload[signatureProperty];

@@ -37,7 +37,6 @@ export interface JssVerifierKeyInput {
   embeddedPublicKey?: JwkPublicKey;
 }
 
-
 /**
  * What JSS reports about one signer in an envelope.
  *
