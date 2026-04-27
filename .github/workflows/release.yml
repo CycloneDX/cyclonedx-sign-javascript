@@ -1,0 +1,243 @@
+# docs: https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions
+
+name: Release
+run-name: Release ${{ inputs.newversion }} ${{ inputs.prerelease == 'true' && '(prerelease)' || '' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      newversion:
+        # Mirrors the argument list to `npm version`.
+        description: 'one of: [<newversion> | major | minor | patch | premajor | preminor | prepatch | prerelease ]'
+        required: true
+      commitMessage:
+        description: 'Release/commit message (%s will be replaced with the resulting version number)'
+        default: '%s'
+        required: true
+      prerelease:
+        description: "This is a pre-release"
+        type: boolean
+        default: false
+        required: false
+
+permissions: {}
+
+env:
+  REPORTS_DIR: CI_reports
+  DIST_DIR: dist
+  PACKED_DIR: CI_packed
+  NODE_ACTIVE_LTS: "24"  # https://nodejs.org/en/about/releases/
+
+jobs:
+  bump:
+    name: bump and tag release
+    concurrency: release-bump
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      version_plain: ${{ steps.bump.outputs.version_plain }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write  # needed for git push of the version-bump commit and tag
+    steps:
+      - name: Checkout
+        # see https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Configure Git
+        # needed for push back of changes
+        run: |
+          set -eux
+          git config --local user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git config --local user.name "${GITHUB_ACTOR}"
+      - name: Setup Node.js ${{ env.NODE_ACTIVE_LTS }}
+        # see https://github.com/actions/setup-node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: ${{ env.NODE_ACTIVE_LTS }}
+      - name: bump VERSION
+        id: bump
+        # `--no-git-tag-version` so we control the commit and tag below
+        # (matches the upstream yarn-based workflow's two-phase approach).
+        run: |
+          set -eux
+          npm version "$NPM_NEWVERSION" --no-git-tag-version
+          VERSION_PLAIN="$(node -p "require('./package.json').version")"
+          echo "::debug::plain version = $VERSION_PLAIN"
+          VERSION="v$VERSION_PLAIN"  # with leading v
+          echo "::debug::new version = $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_plain=$VERSION_PLAIN" >> "$GITHUB_OUTPUT"
+        env:
+          NPM_NEWVERSION: ${{ github.event.inputs.newversion }}
+      - name: git commit & tag & push back
+        run: |
+          set -eux
+          GCOMMIT_MESSAGE="${COMMIT_MESSAGE//%s/$VERSION_PLAIN}"
+          git add package.json package-lock.json
+          git commit -s -m "$GCOMMIT_MESSAGE"
+          git tag -a -m "$GCOMMIT_MESSAGE" "$GTAG_NAME"
+          git push --follow-tags
+        env:
+          COMMIT_MESSAGE: ${{ github.event.inputs.commitMessage }}
+          GTAG_NAME: ${{ steps.bump.outputs.version }}
+          VERSION_PLAIN: ${{ steps.bump.outputs.version_plain }}
+
+  build:
+    needs: [ "bump" ]
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        # see https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ needs.bump.outputs.version }}
+      - name: Setup Node.js ${{ env.NODE_ACTIVE_LTS }}
+        # see https://github.com/actions/setup-node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: ${{ env.NODE_ACTIVE_LTS }}
+      - name: Install dependencies
+        # `npm install` rather than `npm ci` so the runner resolves its
+        # own platform-specific optional deps (rolldown ships different
+        # native bindings per OS and arch).
+        run: npm install --no-audit --no-fund --no-progress
+      - name: build
+        run: npm run build
+      - name: artifact build result
+        # see https://github.com/actions/upload-artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ${{ env.DIST_DIR }}
+          path: ${{ env.DIST_DIR }}
+          retention-days: 5
+          if-no-files-found: error
+
+  test-node:
+    needs:
+      - 'bump'
+      - 'build'
+    name: test node
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        # see https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ needs.bump.outputs.version }}
+      - name: Setup Node.js ${{ env.NODE_ACTIVE_LTS }}
+        # see https://github.com/actions/setup-node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: ${{ env.NODE_ACTIVE_LTS }}
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --no-progress
+      - name: typecheck
+        run: npm run typecheck
+      - name: run tests
+        run: npm test
+
+  publish-registry:
+    needs:
+      - "bump"
+      - "build"
+      - "test-node"
+    name: publish NPMJS
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write  # Enables provenance signing via OIDC
+    env:
+      NPMJS_RELEASE_TAG: ${{ github.event.inputs.prerelease == 'true' && 'unstable-prerelease' || 'latest' }}
+    steps:
+      - name: Checkout
+        # see https://github.com/actions/checkout
+        # Checkout at the version-bumped tag so package.json + README +
+        # LICENSE + src/ are present for `npm publish`.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ needs.bump.outputs.version }}
+      - name: Setup Node.js ${{ env.NODE_ACTIVE_LTS }}
+        # see https://github.com/actions/setup-node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: ${{ env.NODE_ACTIVE_LTS }}
+          registry-url: https://registry.npmjs.org
+      - name: fetch build artifact
+        # see https://github.com/actions/download-artifact
+        # Drop the artifact into ./dist so package.json's `files` entry
+        # (which lists `dist`) finds it at publish time.
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ env.DIST_DIR }}
+          path: ${{ env.DIST_DIR }}
+      - name: publish to registry as "${{ env.NPMJS_RELEASE_TAG }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: >
+          npm publish
+          --provenance
+          --access public
+          --tag "$NPMJS_RELEASE_TAG"
+      - name: pack release result
+        run: |
+          set -eux
+          mkdir -p "$PACKED_DIR"
+          npm pack --pack-destination "$PACKED_DIR"
+      - name: artifact release result
+        # see https://github.com/actions/upload-artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ${{ env.PACKED_DIR }}
+          path: ${{ env.PACKED_DIR }}/
+          if-no-files-found: error
+
+  release-GH:
+    needs:
+      - "bump"
+      - "build"
+      - "publish-registry"
+    name: publish GitHub
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write  # create a release
+    env:
+      ASSETS_DIR: release_assets
+    steps:
+      - name: Checkout
+        # see https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ needs.bump.outputs.version }}
+      - name: fetch packages
+        # see https://github.com/actions/download-artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ env.PACKED_DIR }}
+          path: ${{ env.PACKED_DIR }}
+      - name: prepare assets
+        run: |
+          set -exu
+          mkdir -p "$ASSETS_DIR"
+          cp -t "$ASSETS_DIR" \
+          "$PACKED_DIR"/*.tgz \
+          LICENSE
+      - name: Create Release
+        id: release
+        # see https://github.com/softprops/action-gh-release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name:   ${{ needs.bump.outputs.version }}
+          name:       ${{ needs.bump.outputs.version_plain }}
+          prerelease: ${{ github.event.inputs.prerelease }}
+          files:      '${{ env.ASSETS_DIR }}/*'
+          # If a tag already has a GitHub release, the existing release
+          # will be updated with the release assets.
