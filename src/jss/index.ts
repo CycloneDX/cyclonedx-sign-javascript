@@ -10,7 +10,7 @@
  * (V2 -> JSS).
  */
 
-export { sign, verify, countersign } from './sign.js';
+export { sign, verify, countersign, computeCanonicalInputs } from './sign.js';
 export { JSS_BINDING, JssBinding } from './binding.js';
 export {
   isRegisteredAlgorithm as isRegisteredJssAlgorithm,

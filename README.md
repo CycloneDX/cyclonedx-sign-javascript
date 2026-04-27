@@ -11,7 +11,7 @@
 Standalone TypeScript implementation of the JSON signing formats used by CycloneDX.
 
 * **JSF** (JSON Signature Format, 0.82) for CycloneDX 1.x.
-* **JSS** (JSON Signature Schema, X.590) for CycloneDX 2.x. Stub.
+* **JSS** (JSON Signature Schema, X.590) for CycloneDX 2.x.
 * **JCS** (JSON Canonicalization Scheme, RFC 8785) used by both.
 
 One library so tool authors can sign and verify CycloneDX BOMs across specification versions through a single dependency. The top-level `sign` and `verify` are async and accept a `cyclonedxVersion` option (a `CycloneDxMajor` enum value) and route to JSF for 1.x or JSS for 2.x.
@@ -22,9 +22,68 @@ The library is self contained. It has no runtime dependencies beyond `node:crypt
 
 | Format | Status |
 | ------ | ------ |
-| JSF 0.82 | Complete. Verified against the Cyberphone reference test vectors for single, multi-signature, signature-chain, `excludes`, and `extensions`. |
+| JSF 0.82 | Complete. Verified against the Cyberphone reference test vectors for single, multi-signature, signature-chain, `excludes`, and `extensions`. See the JSF compliance table below for a clause-by-clause breakdown. |
 | JSS (ITU-T X.590, 10/2023) | Complete for Ed25519, Ed448, RS256/384/512, PS256/384/512. ES256/384/512 are deferred (pure node:crypto cannot consume a pre-hashed digest for ECDSA; tracked in `docs/specs/jss-implementation-plan.md`). XMSS / LMS quantum-safe options are out of scope for this release. Verified against X.590 worked-example canonical bytes and SHA-256 hashes. |
 | JCS (RFC 8785) | Complete. |
+
+### JSF 0.82 compliance table
+
+| Clause | Requirement | Status | Notes |
+| ------ | ----------- | ------ | ----- |
+| § 5 signaturecore | `algorithm` (M), `value` (M), `keyId` (O), `publicKey` (O), `certificatePath` (O) | Implemented | All five fields round-trip; `publicKey` exported as a sanitized JWK. |
+| § 5 multisignature | `signers` array of signaturecore | Implemented | `mode: 'multi'`. |
+| § 5 signaturechain | `chain` array of signaturecore | Implemented | `mode: 'chain'` and `appendChainSigner`. |
+| § 5 publicKey JWK shape | RFC 7517 JWK | Implemented | RSA, EC, OKP, oct supported. Extra JWK fields stripped on export. |
+| § 5 Global Option `excludes` | top-level fields excluded from canonical form; `excludes` itself is unsigned | Implemented | The `excludes` property is correctly excluded from the canonical view per § 5; verified against spec reference vectors. |
+| § 5 Global Option `extensions` | array of names of extension property values that live inside the signaturecore; reserved-word collision rejected; duplicates rejected | Implemented | Names list signed, values inside the signaturecore signed, optional-per-signer in multi/chain. |
+| § 5 acceptance allowlists | "must provide options for specifying which properties to accept" | Implemented | `allowedExcludes` and `allowedExtensions` on `JsfVerifyOptions`. Lenient default; README guidance to pin in production. |
+| § 6 verification procedure | strip `value`, JCS canonicalize, verify | Implemented | |
+| § 6 "no undefined properties inside the signature object" | normative verifier rule | Implemented | Always-on; not opt-in. Wrapper and signaturecore property closure enforced. |
+| § 6 X.509 path validation | "out of scope" per spec | Deferred to caller | `certificatePath` is exposed; RFC 5280 chain building, revocation, OCSP are the caller's responsibility. |
+| § 7 signing procedure | build core without `value`, JCS, sign, add `value` | Implemented | Sign never mutates the input payload. |
+| § 8 multiple signatures bracket / comma rules | each signer canonicalizes against ONLY itself in the array | Implemented | Falls out of the array shape; verified against `mult-*` reference vectors. |
+| § 9 signature-chain rules | lower-order signers in full, higher-order removed, target stripped | Implemented | Verified against `chai-*` reference vectors. |
+| § 10 I-JSON conformance | RFC 7493 / JCS RFC 8785 | Implemented | JCS module enforces RFC 8785 rules (sort order, escapes, number form, no NaN / Infinity). |
+| § 6.2.2 algorithm vocabulary (named) | RS256/384/512, PS256/384/512, ES256/384/512, Ed25519, Ed448, HS256/384/512 | Implemented | All 14 named algorithms sign and verify. |
+| § 6.2.2 URI-named proprietary algorithms | "must be expressed as URIs" if added | **Not supported (intentional)** | Out of scope for this release; the algorithm registry is closed to the JWA / RFC 8037 named set. CycloneDX use cases are well covered by the named algorithms; URI-named extensibility would add a registration API and increase the security review surface. Will be revisited if a concrete need lands. |
+| App. A reference vectors | spec author's worked examples | Implemented | Both Cyberphone webpki interop fixtures and the JSF spec Appendix A test vectors are committed under `test/fixtures/jsf/interop/` and verified by the test suite. |
+| App. B ECMAScript / JCS mode | reference to JCS | Implemented | RFC 8785 implementation in `src/jcs.ts`. |
+| App. C counter signatures via signaturechain | most straightforward construction | Implemented | `appendChainSigner` with verify-first defense (CWE-345 / CWE-347). |
+| App. C counter signatures via multisignature + extensions | peer-based construction | Implemented | `appendMultiSigner` + `extensionValues` per signer for application-specific counter-sign metadata. |
+
+### JSS (ITU-T X.590, 10/2023) compliance table
+
+| Clause | Requirement | Status | Notes |
+| ------ | ----------- | ------ | ----- |
+| § 6.1 data types | boolean, identifier (UUID), string, timestamp (RFC 3339) | Implemented | Caller supplies timestamp / UUID strings; the library does not validate RFC 3339 / RFC 4122 grammar. |
+| § 6.2.1 `hash_algorithm` (M) | IANA hash registry | Implemented | sha-256, sha-384, sha-512. Lower-case-with-hyphen names per the spec example. |
+| § 6.2.1 `algorithm` (M) | algorithm name from § 6.2.2 vocabulary | Implemented (named subset; see below) | |
+| § 6.2.1 `public_key` (O) | PEM body of DER SPKI, no header / footer | Implemented | Round-trip preserves the body; `'auto'` derives it from `privateKey` at sign time. |
+| § 6.2.1 `public_cert_chain` (O) | base64 (NOT base64url) DER X.509 chain, leaf first | Implemented | Round-trips; verify falls back to the leaf cert's embedded public key when `public_key` is absent. |
+| § 6.2.1 `cert_url` (O) | URI to a PEM cert chain | Round-trip only | Library does NOT fetch the URL; spec requires TLS plus RFC 6125 server identity validation, which is the caller's responsibility. |
+| § 6.2.1 `thumbprint` (O) | base64URL SHA-256 of leaf DER cert | Round-trip only | Library does NOT resolve a thumbprint to a certificate; the caller does the lookup. |
+| § 6.2.1 `value` (M) | base64URL signature | Implemented | |
+| § 6.2.1 nested `signature` (O) | counter signature | Implemented | `countersign()` with verify-first defense (CWE-345 / CWE-347). |
+| § 6.2.1 "MUST populate one of public_key / cert_chain / cert_url / thumbprint" | sign-time validation | Implemented | `validateSignerInput` rejects signers with none of the four. |
+| § 6.2.2 RS256 / RS384 / RS512 | RSA-PKCS1 v1.5 | Implemented | DigestInfo built per RFC 3447 + `crypto.privateEncrypt(PKCS1)`; pre-hashed input matches dotnet-jss. |
+| § 6.2.2 PS256 / PS384 / PS512 | RSA-PSS | Implemented | EMSA-PSS encoded by hand + `crypto.privateEncrypt(NO_PADDING)`. |
+| § 6.2.2 Ed25519, Ed448 | EdDSA | Implemented | `crypto.sign(null, hash, edPrivateKey)`. |
+| § 6.2.2 ES256 / ES384 / ES512 | ECDSA | **Deferred** | Pure node:crypto cannot consume a pre-hashed digest for ECDSA without a third-party primitive. Throws `JssNotImplementedError`. Tracked in `docs/specs/jss-implementation-plan.md`. |
+| § 6.2.2 XMSS-SHA2_* | XMSS quantum-safe | **Out of scope** | node:crypto does not support XMSS. Roadmap. |
+| § 6.2.2 LMS_SHA256_* | LMS quantum-safe | **Out of scope** | node:crypto does not support LMS. Roadmap. |
+| § 6.2.2 HS256 / HS384 / HS512 | HMAC | **Not supported (intentional)** | Spec § 6.2.2 says "SHOULD NOT be used". Library follows the spec recommendation; callers needing HMAC use the JSF binding. |
+| § 6.3 illustrative metadata properties | type, id, related_to, related_version, created, modified, revoked, signee, valid_from, valid_until | Implemented as caller-supplied | Custom metadata round-trips and is part of the canonical form; the library imposes no semantics on these names. |
+| § 7.1 signature creation procedure | seven steps | Implemented | `sign()`. |
+| § 7.1.2 / § 7.1.7 existing signatures preserved at start of array | reassembly | Implemented | Calling `sign()` on an already-signed envelope appends a new independent signer; existing signatures stay at the start. |
+| § 7.2 counter signing procedure | seven steps | Implemented | `countersign()`. |
+| § 7.2.2 other signatures temporarily removed | canonical view | Implemented | Verified against worked example clause 7.2.4 / 7.2.5. |
+| § 8.1 verification procedure | six steps | Implemented | `verify()`. Top-level verify strips the nested counter signature so the original signer's canonical view is reproduced exactly (matches dotnet-jss). |
+| § 8.1.6 X.509 path validation | "out of scope" per spec | Deferred to caller | `public_cert_chain` is exposed via the verify result; RFC 5280 chain building, revocation, OCSP are the caller's responsibility. |
+| § 9 I-JSON conformance | RFC 7493 / RFC 8785 | Implemented | JCS module enforces RFC 8785 rules. |
+| App. I open-source impls | non-normative | n/a | |
+| App. II Ed25519 reference keys | reference test material | Used by tests | Committed under `test/fixtures/jss/spec/`. |
+| App. III countersigned transaction | non-normative | n/a | |
+| Erratum: clauses 7.1.6 / 7.2.6 published Ed25519 values | should verify against Appendix II key | **Spec erratum confirmed** | Published values do NOT verify against Appendix II key. Independently verified with Node crypto; same conclusion as `coderpatros/dotnet-jss`. Library commits the published values verbatim and ships an EXPECTED-FAIL test so a future spec revision that fixes the erratum is detected. |
 
 ## Install
 

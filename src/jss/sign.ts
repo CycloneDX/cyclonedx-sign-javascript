@@ -57,14 +57,13 @@ export async function sign(
 
   const signers = collectSigners(options);
   const signatureProperty = options.signatureProperty ?? DEFAULT_SIGNATURE_PROPERTY;
-  if (signatureProperty in payload) {
-    throw new JssInputError(
-      `Payload already has a "${signatureProperty}" property; refusing to overwrite`,
-    );
-  }
 
   // Existing signatures (if any) on the payload must be preserved
-  // around the signing operation per X.590 § 7.1.2.
+  // around the signing operation per X.590 § 7.1.2 / § 7.1.7. Calling
+  // sign() on an already-signed envelope is the normative way to add
+  // an additional independent signer; the new signer does not commit
+  // to the existing ones (they are temporarily removed during
+  // canonicalization).
   const existing = extractExisting(payload, signatureProperty);
   const stripped: JsonObject = { ...payload };
   if (existing.length > 0) {
@@ -550,6 +549,76 @@ async function verifyCounterOne(
   }
   if (!ok) out.errors.push('counter signature did not verify');
   else out.valid = true;
+  return out;
+}
+
+// -- computeCanonicalInputs --------------------------------------------------
+
+/**
+ * Pre-compute the per-signer canonical bytes for two-phase signing
+ * flows (HSM, KMS, remote signer). Returns one byte sequence per
+ * signer in `state.signers` order; each is the JCS canonical form
+ * the corresponding signer would have hashed.
+ *
+ * Pre-hashing is the caller's responsibility in two-phase mode: the
+ * caller hashes with the per-signer `hash_algorithm` and feeds the
+ * digest into the asymmetric primitive directly (or, for an HSM that
+ * expects the canonical bytes plus an algorithm hint, uses the bytes
+ * here as-is). See `docs/specs/jss-implementation-plan.md` § 5.5.
+ */
+export function computeCanonicalInputs(
+  payload: JsonObject,
+  state: {
+    signers: ReadonlyArray<{
+      algorithm: string;
+      hash_algorithm?: string;
+      keyId?: string;
+      public_key?: string;
+      public_cert_chain?: readonly string[];
+      cert_url?: string;
+      thumbprint?: string;
+      metadata?: Record<string, JsonValue>;
+      // Pre-finalized value, if known. Counter-sign two-phase flows
+      // sometimes know prior signer values when computing the next.
+      value?: string;
+    }>;
+    signatureProperty?: string;
+  },
+): Uint8Array[] {
+  if (!Array.isArray(state.signers) || state.signers.length === 0) {
+    throw new JssInputError('state.signers must be a non-empty array');
+  }
+  const signatureProperty = state.signatureProperty ?? DEFAULT_SIGNATURE_PROPERTY;
+  const stripped: JsonObject = { ...payload };
+  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete, security/detect-object-injection
+  delete stripped[signatureProperty];
+
+  const out: Uint8Array[] = [];
+  for (const s of state.signers) {
+    const hashAlgorithm = s.hash_algorithm ?? DEFAULT_HASH_ALGORITHM;
+    const ext: Record<string, JsonValue> = { [JSS_HASH_ALGO_KEY]: hashAlgorithm };
+    if (s.public_key !== undefined) ext.public_key = s.public_key;
+    if (s.public_cert_chain !== undefined) ext.public_cert_chain = [...s.public_cert_chain];
+    if (s.cert_url !== undefined) ext.cert_url = s.cert_url;
+    if (s.thumbprint !== undefined) ext.thumbprint = s.thumbprint;
+    if (s.metadata) {
+      for (const [k, v] of Object.entries(s.metadata) as [string, JsonValue][]) {
+        if (k === JSS_HASH_ALGO_KEY || k === JSS_COUNTERSIG_KEY) continue;
+        // eslint-disable-next-line security/detect-object-injection -- caller-supplied key checked above for sentinels
+        ext[k] = v;
+      }
+    }
+    const desc: JssSignerDescriptor = { algorithm: s.algorithm, extensionValues: ext };
+    if (s.value !== undefined) desc.value = s.value;
+    const tmpState: JssWrapperState = {
+      mode: 'single',
+      options: {},
+      signers: [desc],
+      finalized: [false],
+    };
+    const view = JSS_BINDING.buildCanonicalView(stripped, tmpState, 0, signatureProperty);
+    out.push(canonicalize(view));
+  }
   return out;
 }
 
