@@ -177,18 +177,27 @@ jobs:
           name: ${{ env.DIST_DIR }}
           path: ${{ env.DIST_DIR }}
       - name: publish to registry as "${{ env.NPMJS_RELEASE_TAG }}"
+        # `--ignore-scripts` skips the `prepare` lifecycle (which is
+        # `tsc` in this repo). devDependencies are not installed in
+        # this job; `dist/` was just downloaded from the build job
+        # and is the authoritative artifact to publish. Re-running
+        # tsc here would also diverge from what the test-node job
+        # exercised.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: >
           npm publish
+          --ignore-scripts
           --provenance
           --access public
           --tag "$NPMJS_RELEASE_TAG"
       - name: pack release result
+        # Same reason as above: skip lifecycle scripts so the tgz
+        # is packed from the existing dist/ + checked-out sources.
         run: |
           set -eux
           mkdir -p "$PACKED_DIR"
-          npm pack --pack-destination "$PACKED_DIR"
+          npm pack --ignore-scripts --pack-destination "$PACKED_DIR"
       - name: artifact release result
         # see https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
