@@ -13,6 +13,7 @@
  */
 
 import { canonicalize } from '../jcs.js';
+import { enforceVerifyFirst } from '../core/verify-first.js';
 import {
   appendDescriptor,
   signEnvelope,
@@ -209,54 +210,27 @@ async function appendInternal(
   // mode the signer is independent but the resulting envelope still
   // ships any forged sibling. Either way, an appender that does not
   // authenticate prior signers risks endorsing a tampered envelope.
-  //
-  // To prevent silent reliance on attacker-controllable embedded
-  // keys, this method REQUIRES one of the two:
-  //
-  //   1. `options.publicKeys` covering every existing signer index
-  //      with keys obtained out of band. The verify-first check then
-  //      uses ONLY those keys; no embedded-key fallback is allowed.
-  //   2. `options.skipVerifyExisting: true` to opt out entirely (the
-  //      caller has verified the envelope out of band, or is the
-  //      sole producer of every prior signer).
-  //
-  // Calls that meet neither condition throw `JsfChainOrderError`.
-  if (!options.skipVerifyExisting) {
-    const expected = baseState.signers.length;
-    if (options.publicKeys === undefined) {
-      throw new JsfChainOrderError(
-        `refusing to append without trusted keys: pass options.publicKeys covering ` +
-          `every existing signer (0..${expected - 1}) so the verify-first defense uses ` +
-          `keys you control, or pass options.skipVerifyExisting: true to bypass the ` +
-          `check entirely (you must then verify the envelope out of band).`,
-      );
-    }
-    for (let i = 0; i < expected; i += 1) {
-      if (!options.publicKeys.has(i)) {
-        throw new JsfChainOrderError(
-          `refusing to append: options.publicKeys is missing an entry for existing ` +
-            `signer #${i}. Provide a trusted key for every signer 0..${expected - 1}, ` +
-            `or pass options.skipVerifyExisting: true to bypass the check.`,
-        );
-      }
-    }
-    const verifyOptions: JsfVerifyOptions = {
-      signatureProperty,
-      publicKeys: options.publicKeys,
-    };
-    const result = await verify(signedPayload, verifyOptions);
-    if (!result.valid) {
+  // Shared shape lives in `core/verify-first.ts`.
+  await enforceVerifyFirst<KeyInput>({
+    expectedSignerCount: baseState.signers.length,
+    publicKeys: options.publicKeys,
+    skipVerifyExisting: options.skipVerifyExisting,
+    action: 'append',
+    raise: (message) => { throw new JsfChainOrderError(message); },
+    verify: async (trustedKeys) => {
+      const result = await verify(signedPayload, {
+        signatureProperty,
+        publicKeys: trustedKeys,
+      } as JsfVerifyOptions);
+      if (result.valid) return null;
       const failed = result.signers
         .filter((s) => !s.valid)
         .map((s) => `#${s.index}: ${s.errors.join('; ')}`)
         .join(' | ');
       const envelope = result.errors.join('; ');
-      throw new JsfChainOrderError(
-        `refusing to append: existing envelope did not verify ` +
-          `(envelope errors: ${envelope || 'none'}; signer errors: ${failed || 'none'}).`,
-      );
-    }
-  }
+      return `envelope errors: ${envelope || 'none'}; signer errors: ${failed || 'none'}`;
+    },
+  });
 
   const extended = appendDescriptor(baseState, newDescriptor);
   const newIndex = extended.signers.length - 1;

@@ -99,10 +99,7 @@ export class JsfBinding implements JsfBindingContract {
     }
     // Read wrapper-level options first so descriptorFromWire knows
     // which keys count as declared extension properties.
-    const options: JsfEnvelopeOptions = {};
-    if (Array.isArray(obj.excludes)) options.excludes = [...(obj.excludes as string[])];
-    if (Array.isArray(obj.extensions))
-      options.extensions = [...(obj.extensions as string[])];
+    const options = extractEnvelopeOptions(obj);
     const signers: JsfSignerDescriptor[] = arr.map((el, i) => {
       if (!el || typeof el !== 'object' || Array.isArray(el)) {
         throw new JsfEnvelopeError(`${arrayKey}[${i}] must be a signer object`);
@@ -116,10 +113,7 @@ export class JsfBinding implements JsfBindingContract {
     if (typeof obj.algorithm !== 'string' || obj.algorithm.length === 0) {
       throw new JsfEnvelopeError('signer is missing algorithm');
     }
-    const options: JsfEnvelopeOptions = {};
-    if (Array.isArray(obj.excludes)) options.excludes = [...(obj.excludes as string[])];
-    if (Array.isArray(obj.extensions))
-      options.extensions = [...(obj.extensions as string[])];
+    const options = extractEnvelopeOptions(obj);
     const desc = this.descriptorFromWire(obj as JsonObject, options);
     return { mode: 'single', options, signers: [desc] };
   }
@@ -321,6 +315,18 @@ export class JsfBinding implements JsfBindingContract {
 export const JSF_BINDING = new JsfBinding();
 
 // -- Helpers -----------------------------------------------------------------
+
+/**
+ * Pull the JSF Global Signature Options (`excludes`, `extensions`) off
+ * a wire wrapper or bare-core object. Centralized so the wrapper and
+ * single-mode detection paths share one implementation.
+ */
+function extractEnvelopeOptions(obj: Record<string, unknown>): JsfEnvelopeOptions {
+  const options: JsfEnvelopeOptions = {};
+  if (Array.isArray(obj.excludes)) options.excludes = [...(obj.excludes as string[])];
+  if (Array.isArray(obj.extensions)) options.extensions = [...(obj.extensions as string[])];
+  return options;
+}
 
 function renderSignaturecore(
   d: JsfSignerDescriptor,

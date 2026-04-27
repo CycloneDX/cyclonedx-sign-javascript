@@ -79,6 +79,19 @@ export function isRegisteredAlgorithm(name: string): name is JssAlgorithm {
   return REGISTERED.has(name as JssAlgorithm);
 }
 
+type AlgorithmFamily = 'eddsa' | 'rsa-pkcs1' | 'rsa-pss' | 'ecdsa';
+
+/**
+ * Map a registered JSS algorithm name to its primitive family. Single
+ * source of truth for the sign/verify dispatch below.
+ */
+function familyOf(algorithm: JssAlgorithm): AlgorithmFamily {
+  if (algorithm === JssAlgorithms.Ed25519 || algorithm === JssAlgorithms.Ed448) return 'eddsa';
+  if (algorithm.startsWith('RS')) return 'rsa-pkcs1';
+  if (algorithm.startsWith('PS')) return 'rsa-pss';
+  return 'ecdsa';
+}
+
 /**
  * Sign a precomputed hash with the JSS algorithm.
  */
@@ -91,25 +104,13 @@ export function signHash(
   ensureRegistered(algorithm);
   ensureHashRegistered(hashAlgorithm);
   ensureHashLength(hashAlgorithm as JssHashAlgorithm, hash);
-
-  if (algorithm === JssAlgorithms.Ed25519 || algorithm === JssAlgorithms.Ed448) {
-    return signEdDsa(algorithm, hash, privateKey);
+  const h = hashAlgorithm as JssHashAlgorithm;
+  switch (familyOf(algorithm)) {
+    case 'eddsa':     return signEdDsa(algorithm, hash, privateKey);
+    case 'rsa-pkcs1': return signRsaPkcs1(h, hash, privateKey);
+    case 'rsa-pss':   return signRsaPss(h, hash, privateKey);
+    case 'ecdsa':     return signEcdsa(algorithm as EcdsaAlgorithm, hash, privateKey);
   }
-  if (algorithm.startsWith('RS')) {
-    return signRsaPkcs1(hashAlgorithm as JssHashAlgorithm, hash, privateKey);
-  }
-  if (algorithm.startsWith('PS')) {
-    return signRsaPss(hashAlgorithm as JssHashAlgorithm, hash, privateKey);
-  }
-  if (
-    algorithm === JssAlgorithms.ES256 ||
-    algorithm === JssAlgorithms.ES384 ||
-    algorithm === JssAlgorithms.ES512
-  ) {
-    return signEcdsa(algorithm, hash, privateKey);
-  }
-  /* c8 ignore next */
-  throw new JssInputError(`JSS algorithm ${algorithm} not implemented`);
 }
 
 /**
@@ -125,25 +126,13 @@ export function verifyHash(
   ensureRegistered(algorithm);
   ensureHashRegistered(hashAlgorithm);
   ensureHashLength(hashAlgorithm as JssHashAlgorithm, hash);
-
-  if (algorithm === JssAlgorithms.Ed25519 || algorithm === JssAlgorithms.Ed448) {
-    return verifyEdDsa(algorithm, hash, signature, publicKey);
+  const h = hashAlgorithm as JssHashAlgorithm;
+  switch (familyOf(algorithm)) {
+    case 'eddsa':     return verifyEdDsa(algorithm, hash, signature, publicKey);
+    case 'rsa-pkcs1': return verifyRsaPkcs1(h, hash, signature, publicKey);
+    case 'rsa-pss':   return verifyRsaPss(h, hash, signature, publicKey);
+    case 'ecdsa':     return verifyEcdsa(algorithm as EcdsaAlgorithm, hash, signature, publicKey);
   }
-  if (algorithm.startsWith('RS')) {
-    return verifyRsaPkcs1(hashAlgorithm as JssHashAlgorithm, hash, signature, publicKey);
-  }
-  if (algorithm.startsWith('PS')) {
-    return verifyRsaPss(hashAlgorithm as JssHashAlgorithm, hash, signature, publicKey);
-  }
-  if (
-    algorithm === JssAlgorithms.ES256 ||
-    algorithm === JssAlgorithms.ES384 ||
-    algorithm === JssAlgorithms.ES512
-  ) {
-    return verifyEcdsa(algorithm, hash, signature, publicKey);
-  }
-  /* c8 ignore next */
-  return false;
 }
 
 // -- EdDSA --------------------------------------------------------------------
@@ -402,6 +391,11 @@ const ECDSA_FIELD_BYTES: Record<EcdsaAlgorithm, number> = {
   [JssAlgorithms.ES384]: 48,
   [JssAlgorithms.ES512]: 66,
 };
+const ECDSA_CURVE_NAMES: Record<EcdsaAlgorithm, string> = {
+  [JssAlgorithms.ES256]: 'P-256',
+  [JssAlgorithms.ES384]: 'P-384',
+  [JssAlgorithms.ES512]: 'P-521',
+};
 
 function signEcdsa(algorithm: EcdsaAlgorithm, hash: Buffer, privateKey: KeyObject): Buffer {
   // eslint-disable-next-line security/detect-object-injection -- algorithm narrowed to a literal union of three known keys
@@ -439,7 +433,7 @@ function verifyEcdsa(
   }
 }
 
-function ecdsaPrivateScalar(key: KeyObject, algorithm: string, expectedField: number): Buffer {
+function ecdsaPrivateScalar(key: KeyObject, algorithm: EcdsaAlgorithm, expectedField: number): Buffer {
   ensureKeyType(key, 'ec', algorithm);
   const jwk = key.export({ format: 'jwk' }) as Record<string, string>;
   if (typeof jwk.d !== 'string') {
@@ -455,7 +449,7 @@ function ecdsaPrivateScalar(key: KeyObject, algorithm: string, expectedField: nu
   return dBytes;
 }
 
-function ecdsaPublicPointUncompressed(key: KeyObject, algorithm: string, expectedField: number): Buffer {
+function ecdsaPublicPointUncompressed(key: KeyObject, algorithm: EcdsaAlgorithm, expectedField: number): Buffer {
   // Accept either a public or a private KeyObject; for private we
   // export the public half via JWK (Node strips `d` automatically when
   // we ask for the public-key JWK shape).
@@ -476,13 +470,9 @@ function ecdsaPublicPointUncompressed(key: KeyObject, algorithm: string, expecte
   return Buffer.concat([Buffer.from([0x04]), x, y]);
 }
 
-function ensureCurve(crv: string | undefined, algorithm: string): void {
-  const want =
-    algorithm === JssAlgorithms.ES256
-      ? 'P-256'
-      : algorithm === JssAlgorithms.ES384
-        ? 'P-384'
-        : 'P-521';
+function ensureCurve(crv: string | undefined, algorithm: EcdsaAlgorithm): void {
+  // eslint-disable-next-line security/detect-object-injection -- algorithm narrowed to EcdsaAlgorithm by the caller; ECDSA_CURVE_NAMES is keyed by exactly that union.
+  const want = ECDSA_CURVE_NAMES[algorithm];
   if (crv !== want) {
     throw new JssInputError(
       `Algorithm ${algorithm} requires curve ${want}; got ${String(crv)}`,
