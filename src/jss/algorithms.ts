@@ -26,6 +26,7 @@
 import {
   constants as cryptoConstants,
   createHash,
+  createPublicKey,
   KeyObject,
   privateDecrypt,
   privateEncrypt,
@@ -36,7 +37,8 @@ import {
   verify as nodeVerify,
 } from 'node:crypto';
 
-import { JssInputError, JssNotImplementedError } from '../errors.js';
+import { p256, p384, p521 } from '@noble/curves/nist.js';
+import { JssInputError } from '../errors.js';
 import type { JssHashAlgorithm } from './hash.js';
 import { hashLength, isRegisteredHashAlgorithm } from './hash.js';
 
@@ -53,10 +55,6 @@ const REGISTERED: ReadonlySet<JssAlgorithm> = new Set<JssAlgorithm>([
   'Ed25519', 'Ed448',
 ]);
 
-const NOT_YET_IMPLEMENTED: ReadonlySet<JssAlgorithm> = new Set<JssAlgorithm>([
-  'ES256', 'ES384', 'ES512',
-]);
-
 export function isRegisteredAlgorithm(name: string): name is JssAlgorithm {
   return REGISTERED.has(name as JssAlgorithm);
 }
@@ -71,7 +69,6 @@ export function signHash(
   privateKey: KeyObject,
 ): Buffer {
   ensureRegistered(algorithm);
-  ensureSupported(algorithm);
   ensureHashRegistered(hashAlgorithm);
   ensureHashLength(hashAlgorithm as JssHashAlgorithm, hash);
 
@@ -84,8 +81,11 @@ export function signHash(
   if (algorithm.startsWith('PS')) {
     return signRsaPss(hashAlgorithm as JssHashAlgorithm, hash, privateKey);
   }
+  if (algorithm === 'ES256' || algorithm === 'ES384' || algorithm === 'ES512') {
+    return signEcdsa(algorithm, hash, privateKey);
+  }
   /* c8 ignore next */
-  throw new JssNotImplementedError(`JSS algorithm ${algorithm} not implemented`);
+  throw new JssInputError(`JSS algorithm ${algorithm} not implemented`);
 }
 
 /**
@@ -99,7 +99,6 @@ export function verifyHash(
   publicKey: KeyObject,
 ): boolean {
   ensureRegistered(algorithm);
-  ensureSupported(algorithm);
   ensureHashRegistered(hashAlgorithm);
   ensureHashLength(hashAlgorithm as JssHashAlgorithm, hash);
 
@@ -111,6 +110,9 @@ export function verifyHash(
   }
   if (algorithm.startsWith('PS')) {
     return verifyRsaPss(hashAlgorithm as JssHashAlgorithm, hash, signature, publicKey);
+  }
+  if (algorithm === 'ES256' || algorithm === 'ES384' || algorithm === 'ES512') {
+    return verifyEcdsa(algorithm, hash, signature, publicKey);
   }
   /* c8 ignore next */
   return false;
@@ -344,6 +346,121 @@ function rsaModulusBits(key: KeyObject): number {
   return details.modulusLength;
 }
 
+// -- ECDSA --------------------------------------------------------------------
+//
+// JSS § 6.2.1 defines value as `sign(algorithm, key, hash(jcs(...)))`.
+// The asymmetric primitive consumes the precomputed digest directly:
+// node:crypto's high-level sign API hashes its input internally, so we
+// route ECDSA through `@noble/curves` which exposes a true pre-hashed
+// signing path. Output is IEEE P-1363 (r||s) per JWA RFC 7518 § 3.4
+// and matches dotnet-jss / BouncyCastle's `ECDsaSigner`.
+//
+// We sign with `lowS: true` (canonical, matches noble default) and
+// verify with `lowS: false` so signatures from any conforming
+// implementation (BouncyCastle, OpenSSL, others) are accepted. ECDSA
+// signatures are not malleable in any way that affects the JSS
+// envelope contract, so accepting both forms is interop-correct.
+
+type EcdsaCurve = typeof p256 | typeof p384 | typeof p521;
+const ECDSA_CURVES: Record<'ES256' | 'ES384' | 'ES512', EcdsaCurve> = {
+  ES256: p256,
+  ES384: p384,
+  ES512: p521,
+};
+const ECDSA_FIELD_BYTES: Record<'ES256' | 'ES384' | 'ES512', number> = {
+  ES256: 32,
+  ES384: 48,
+  ES512: 66,
+};
+
+function signEcdsa(algorithm: 'ES256' | 'ES384' | 'ES512', hash: Buffer, privateKey: KeyObject): Buffer {
+  // eslint-disable-next-line security/detect-object-injection -- algorithm narrowed to a literal union of three known keys
+  const curve = ECDSA_CURVES[algorithm];
+  const expectedField = ECDSA_FIELD_BYTES[algorithm];
+  const dBytes = ecdsaPrivateScalar(privateKey, algorithm, expectedField);
+  const sig = curve.sign(hash, dBytes, { prehash: false, format: 'compact' });
+  // Defense-in-depth: confirm we got the expected field-size * 2.
+  if (sig.length !== expectedField * 2) {
+    throw new JssInputError(
+      `Internal: ECDSA signature length mismatch for ${algorithm} (got ${sig.length}, want ${expectedField * 2})`,
+    );
+  }
+  return Buffer.from(sig);
+}
+
+function verifyEcdsa(
+  algorithm: 'ES256' | 'ES384' | 'ES512',
+  hash: Buffer,
+  signature: Buffer,
+  publicKey: KeyObject,
+): boolean {
+  // eslint-disable-next-line security/detect-object-injection -- narrowed
+  const curve = ECDSA_CURVES[algorithm];
+  const expectedField = ECDSA_FIELD_BYTES[algorithm];
+  // A well-formed IEEE P-1363 signature is exactly 2 * field bytes.
+  // Reject other lengths up front so tampered envelopes do not trigger
+  // noisy errors deep in @noble/curves.
+  if (signature.length !== expectedField * 2) return false;
+  const pubBytes = ecdsaPublicPointUncompressed(publicKey, algorithm, expectedField);
+  try {
+    return curve.verify(signature, hash, pubBytes, { prehash: false, lowS: false });
+  } catch {
+    return false;
+  }
+}
+
+function ecdsaPrivateScalar(key: KeyObject, algorithm: string, expectedField: number): Buffer {
+  ensureKeyType(key, 'ec', algorithm);
+  const jwk = key.export({ format: 'jwk' }) as Record<string, string>;
+  if (typeof jwk.d !== 'string') {
+    throw new JssInputError(`Algorithm ${algorithm} requires a private EC key with scalar component`);
+  }
+  ensureCurve(jwk.crv, algorithm);
+  const dBytes = base64UrlToBuffer(jwk.d);
+  if (dBytes.length !== expectedField) {
+    throw new JssInputError(
+      `Algorithm ${algorithm} expects a ${expectedField}-byte private scalar; got ${dBytes.length}`,
+    );
+  }
+  return dBytes;
+}
+
+function ecdsaPublicPointUncompressed(key: KeyObject, algorithm: string, expectedField: number): Buffer {
+  // Accept either a public or a private KeyObject; for private we
+  // export the public half via JWK (Node strips `d` automatically when
+  // we ask for the public-key JWK shape).
+  const pub = key.type === 'private'
+    ? createPublicKey(key).export({ format: 'jwk' }) as Record<string, string>
+    : key.export({ format: 'jwk' }) as Record<string, string>;
+  if (pub.kty !== 'EC') {
+    throw new JssInputError(`Algorithm ${algorithm} requires an EC public key; got kty=${String(pub.kty)}`);
+  }
+  ensureCurve(pub.crv, algorithm);
+  const x = base64UrlToBuffer(pub.x ?? '');
+  const y = base64UrlToBuffer(pub.y ?? '');
+  if (x.length !== expectedField || y.length !== expectedField) {
+    throw new JssInputError(
+      `Algorithm ${algorithm} expects ${expectedField}-byte coordinates; got x=${x.length}, y=${y.length}`,
+    );
+  }
+  return Buffer.concat([Buffer.from([0x04]), x, y]);
+}
+
+function ensureCurve(crv: string | undefined, algorithm: string): void {
+  const want = algorithm === 'ES256' ? 'P-256' : algorithm === 'ES384' ? 'P-384' : 'P-521';
+  if (crv !== want) {
+    throw new JssInputError(
+      `Algorithm ${algorithm} requires curve ${want}; got ${String(crv)}`,
+    );
+  }
+}
+
+function base64UrlToBuffer(s: string): Buffer {
+  const pad = (4 - (s.length % 4)) % 4;
+  const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat(pad);
+  return Buffer.from(b64, 'base64');
+}
+
 // -- low-level helpers --------------------------------------------------------
 
 function hashOf(name: JssHashAlgorithm, data: Buffer): Buffer {
@@ -378,16 +495,6 @@ function constantTimeEqual(a: Buffer, b: Buffer): boolean {
 function ensureRegistered(algorithm: string): asserts algorithm is JssAlgorithm {
   if (!isRegisteredAlgorithm(algorithm)) {
     throw new JssInputError(`Unsupported JSS algorithm: ${algorithm}`);
-  }
-}
-
-function ensureSupported(algorithm: JssAlgorithm): void {
-  if (NOT_YET_IMPLEMENTED.has(algorithm)) {
-    throw new JssNotImplementedError(
-      `JSS algorithm ${algorithm} (ECDSA) is not yet implemented in this build. ` +
-        `Pure node:crypto cannot consume a pre-hashed digest for ECDSA without ` +
-        `double-hashing. Tracked in docs/specs/jss-implementation-plan.md.`,
-    );
   }
 }
 

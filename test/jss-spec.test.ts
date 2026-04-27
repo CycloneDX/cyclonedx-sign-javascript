@@ -31,7 +31,7 @@ import {
 
 import { canonicalize } from '../src/jcs.js';
 import { sign, verify, countersign } from '../src/jss/index.js';
-import { JssEnvelopeError, JssInputError, JssNotImplementedError } from '../src/errors.js';
+import { JssEnvelopeError, JssInputError } from '../src/errors.js';
 import type { JsonObject } from '../src/types.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -181,11 +181,24 @@ describe('JSS algorithms', () => {
     },
   );
 
-  it('ECDSA throws JssNotImplementedError (pure node:crypto cannot consume a pre-hashed digest without a library)', async () => {
-    const ec = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }) as unknown as KeyPair;
-    await expect(
-      sign({ a: 1 }, { signer: { algorithm: 'ES256', privateKey: ec.privateKey, public_key: 'auto' } }),
-    ).rejects.toThrow(JssNotImplementedError);
+  it.each([
+    ['ES256', 'prime256v1', 'sha-256', 64],
+    ['ES384', 'secp384r1', 'sha-384', 96],
+    ['ES512', 'secp521r1', 'sha-512', 132],
+  ] as const)('%s round trip (signature length %i bytes)', async (algorithm, curve, hash, sigBytes) => {
+    const key = generateKeyPairSync('ec', { namedCurve: curve }) as unknown as KeyPair;
+    const signed = await sign({ subject: `rt-${algorithm}` }, {
+      signer: { algorithm, hash_algorithm: hash, privateKey: key.privateKey, public_key: 'auto' },
+    });
+    const r = await verify(signed);
+    expect(r.valid).toBe(true);
+    expect(r.signers[0]?.algorithm).toBe(algorithm);
+    // IEEE P-1363 (r || s) per JWA RFC 7518 § 3.4.
+    const value = (signed.signatures as { value: string }[])[0]?.value ?? '';
+    const padded = value.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = (4 - (padded.length % 4)) % 4;
+    const decoded = Buffer.from(padded + '='.repeat(pad), 'base64');
+    expect(decoded.length).toBe(sigBytes);
   });
 });
 

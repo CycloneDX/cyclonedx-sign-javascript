@@ -75,17 +75,18 @@ describe('sign and verify', () => {
     expect(result.cyclonedxVersion).toBe(CycloneDxMajor.V2);
   });
 
-  it('JSS V2 still throws JssNotImplementedError for the deferred ECDSA family', async () => {
+  it('JSS V2 routes ES256 through the implemented ECDSA path', async () => {
     const { privateKey } = ecPair();
-    await expect(
-      sign(
-        { hello: 'world' },
-        {
-          cyclonedxVersion: CycloneDxMajor.V2,
-          signer: { algorithm: 'ES256', privateKey, public_key: 'auto' },
-        },
-      ),
-    ).rejects.toThrow(JssNotImplementedError);
+    const signed = await sign(
+      { hello: 'world' },
+      {
+        cyclonedxVersion: CycloneDxMajor.V2,
+        signer: { algorithm: 'ES256', privateKey, public_key: 'auto' },
+      },
+    );
+    expect(Array.isArray(signed.signatures)).toBe(true);
+    const result = await verify(signed, { cyclonedxVersion: CycloneDxMajor.V2 });
+    expect(result.valid).toBe(true);
   });
 
   it('detects JSF on verify without an explicit version', async () => {
@@ -192,21 +193,22 @@ describe('JSS subpath surface', () => {
     expect(r.valid).toBe(true);
   });
 
-  it('ECDSA family still throws JssNotImplementedError', async () => {
+  it('ECDSA family round-trips through the JSS subpath', async () => {
     const { privateKey } = ecPair();
-    await expect(
-      signJss({ a: 1 }, { signer: { algorithm: 'ES256', privateKey, public_key: 'auto' } }),
-    ).rejects.toThrow(JssNotImplementedError);
+    const signed = await signJss({ a: 1 }, {
+      signer: { algorithm: 'ES256', privateKey, public_key: 'auto' },
+    });
+    const r = await verifyJss(signed);
+    expect(r.valid).toBe(true);
   });
 
-  it('JssNotImplementedError remains a SignatureError and is not a JsfError', async () => {
-    const { privateKey } = ecPair();
-    try {
-      await signJss({ a: 1 }, { signer: { algorithm: 'ES256', privateKey, public_key: 'auto' } });
-    } catch (err) {
-      expect(err).toBeInstanceOf(SignatureError);
-      expect(err).toBeInstanceOf(JssNotImplementedError);
-      expect(err).not.toBeInstanceOf(JsfError);
-    }
+  it('JssNotImplementedError still classifies as SignatureError and is not a JsfError', () => {
+    // The error class is retained for future use cases (e.g., XMSS / LMS),
+    // even though no algorithm currently throws it. Walk the inheritance
+    // chain on a freshly-constructed instance.
+    const e = new JssNotImplementedError('test');
+    expect(e).toBeInstanceOf(SignatureError);
+    expect(e).toBeInstanceOf(JssNotImplementedError);
+    expect(e).not.toBeInstanceOf(JsfError);
   });
 });

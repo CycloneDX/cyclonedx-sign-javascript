@@ -23,7 +23,7 @@ The library is self contained. It has no runtime dependencies beyond `node:crypt
 | Format | Status |
 | ------ | ------ |
 | JSF 0.82 | Complete. Verified against the Cyberphone reference test vectors for single, multi-signature, signature-chain, `excludes`, and `extensions`. See the JSF compliance table below for a clause-by-clause breakdown. |
-| JSS (ITU-T X.590, 10/2023) | Complete for Ed25519, Ed448, RS256/384/512, PS256/384/512. ES256/384/512 are deferred (pure node:crypto cannot consume a pre-hashed digest for ECDSA; tracked in `docs/specs/jss-implementation-plan.md`). XMSS / LMS quantum-safe options are out of scope for this release. Verified against X.590 worked-example canonical bytes and SHA-256 hashes. |
+| JSS (ITU-T X.590, 10/2023) | Complete for Ed25519, Ed448, RS256/384/512, PS256/384/512, ES256/384/512. ECDSA is implemented via `@noble/curves` (audited, zero-dep, runtime peer of this package); X.590's pre-hashed signing contract requires a primitive that node:crypto does not expose, which is what @noble/curves provides. XMSS / LMS quantum-safe options are out of scope for this release. HS256/384/512 are intentionally not supported per X.590 § 6.2.2 ("SHOULD NOT be used"). Verified against X.590 worked-example canonical bytes and SHA-256 hashes. |
 | JCS (RFC 8785) | Complete. |
 
 ### JSF 0.82 compliance table
@@ -68,7 +68,7 @@ The library is self contained. It has no runtime dependencies beyond `node:crypt
 | § 6.2.2 RS256 / RS384 / RS512 | RSA-PKCS1 v1.5 | Implemented | DigestInfo built per RFC 3447 + `crypto.privateEncrypt(PKCS1)`; pre-hashed input matches dotnet-jss. |
 | § 6.2.2 PS256 / PS384 / PS512 | RSA-PSS | Implemented | EMSA-PSS encoded by hand + `crypto.privateEncrypt(NO_PADDING)`. |
 | § 6.2.2 Ed25519, Ed448 | EdDSA | Implemented | `crypto.sign(null, hash, edPrivateKey)`. |
-| § 6.2.2 ES256 / ES384 / ES512 | ECDSA | **Deferred** | Pure node:crypto cannot consume a pre-hashed digest for ECDSA without a third-party primitive. Throws `JssNotImplementedError`. Tracked in `docs/specs/jss-implementation-plan.md`. |
+| § 6.2.2 ES256 / ES384 / ES512 | ECDSA | Implemented | Uses `@noble/curves` (`p256` / `p384` / `p521`) for the pre-hashed signing path that node:crypto cannot expose. IEEE P-1363 (r \|\| s) output per JWA RFC 7518 § 3.4. Cross-implementation interop with node:crypto-produced signatures verified (50/50 random samples). Sign normalizes to low-S (canonical); verify accepts both forms. |
 | § 6.2.2 XMSS-SHA2_* | XMSS quantum-safe | **Out of scope** | node:crypto does not support XMSS. Roadmap. |
 | § 6.2.2 LMS_SHA256_* | LMS quantum-safe | **Out of scope** | node:crypto does not support LMS. Roadmap. |
 | § 6.2.2 HS256 / HS384 / HS512 | HMAC | **Not supported (intentional)** | Spec § 6.2.2 says "SHOULD NOT be used". Library follows the spec recommendation; callers needing HMAC use the JSF binding. |
