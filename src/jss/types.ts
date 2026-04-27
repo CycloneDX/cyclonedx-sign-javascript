@@ -3,19 +3,24 @@
  *
  * Status: INCOMPLETE STUB.
  *
- * These shapes are provisional. They exist so tool authors can start
- * wiring against the API surface today, but the fields, algorithm set,
- * and envelope layout will evolve as the X.590 specification and the
- * CycloneDX 2.x subschema stabilize. Expect breaking changes to the
- * JSS-specific types until this stub is replaced with a working
+ * These shapes are provisional. They mirror the JSF unified API
+ * surface so the call sites are stable for tool authors, but the
+ * fields, algorithm set, and envelope layout will evolve as X.590 and
+ * the CycloneDX 2.x subschema stabilize. Expect breaking changes to
+ * the JSS-specific types until this stub is replaced with a working
  * implementation.
  *
- * Where JSS and JSF share a concept (JWK shape, key input types, base
- * JSON value types) the types are imported from ../types.ts rather
- * than duplicated.
+ * Where JSS and JSF share a concept (JWK, key inputs, base JSON value
+ * types, the verify policy/aggregation enum) the types are imported
+ * from ../types.ts or ../core/types.ts rather than duplicated.
  */
 
-import type { JwkPublicKey, KeyInput } from '../types.js';
+import type { JsonValue, JwkPublicKey, KeyInput } from '../types.js';
+import type {
+  EnvelopeMode,
+  Signer,
+  VerifyPolicy,
+} from '../core/types.js';
 
 /**
  * JSS algorithm identifier. Deliberately a plain string while the
@@ -25,9 +30,8 @@ import type { JwkPublicKey, KeyInput } from '../types.js';
 export type JssAlgorithm = string;
 
 /**
- * Provisional JSS signer shape. The final X.590 layout may rename
- * fields or introduce a distinct envelope structure; treat this as a
- * placeholder for type checks only.
+ * Provisional JSS signer shape. The X.590 wire layout may rename or
+ * restructure fields; treat this as a placeholder for type checks.
  */
 export interface JssSigner {
   algorithm: JssAlgorithm;
@@ -37,28 +41,53 @@ export interface JssSigner {
   [extra: string]: unknown;
 }
 
-export interface JssSignOptions {
+export interface JssSignerInput {
   algorithm: JssAlgorithm;
-  privateKey: KeyInput;
-  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- 'auto' is a documented sentinel string; keeping the literal aids autocomplete.
+  privateKey?: KeyInput;
+  signer?: Signer;
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- 'auto' is a documented sentinel string.
   publicKey?: KeyInput | false | 'auto';
   keyId?: string;
+  certificatePath?: string[];
+  extensionValues?: Record<string, JsonValue>;
+}
+
+export interface JssSignOptions {
+  signer?: JssSignerInput;
+  signers?: JssSignerInput[];
+  mode?: 'multi' | 'chain';
+  excludes?: string[];
+  extensions?: string[];
   signatureProperty?: string;
-  /** Additional fields may be added as the X.590 spec settles. */
-  [extra: string]: unknown;
 }
 
 export interface JssVerifyOptions {
   publicKey?: KeyInput;
+  publicKeys?: ReadonlyMap<number, KeyInput>;
   signatureProperty?: string;
   allowedAlgorithms?: string[];
-  [extra: string]: unknown;
+  requireEmbeddedPublicKey?: boolean;
+  policy?: VerifyPolicy;
+  allowedExcludes?: readonly string[];
+  allowedExtensions?: readonly string[];
+}
+
+export interface JssSignerVerifyResult {
+  index: number;
+  valid: boolean;
+  algorithm: string;
+  keyId?: string;
+  publicKey?: JwkPublicKey;
+  certificatePath?: string[];
+  extensionValues?: Record<string, JsonValue>;
+  errors: string[];
 }
 
 export interface JssVerifyResult {
   valid: boolean;
-  algorithm?: string;
-  publicKey?: JwkPublicKey;
-  keyId?: string;
+  mode: EnvelopeMode;
+  signers: JssSignerVerifyResult[];
+  excludes?: string[];
+  extensions?: string[];
   errors: string[];
 }

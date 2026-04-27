@@ -1,0 +1,15 @@
+{
+  "now": "2019-02-10T11:23:06Z",
+  "name": "Joe",
+  "id": 2200063,
+  "authorizationSignature": {
+    "algorithm": "ES256",
+    "publicKey": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "6BKxpty8cI-exDzCkh-goU6dXq3MbcY0cd1LaAxiNrU",
+      "y": "mCbcvUzm44j3Lt2b5BPyQloQ91tf2D2V-gzeUxWaUdg"
+    },
+    "value": "2kbNgBVkRU05yUJ53jdR4gAx-LeLeZCBmD88y_WVlLBGvxyOP5ASS-WRgiX3HjLu7y8P5c7Qy7ngjWATZmO3lw"
+  }
+}

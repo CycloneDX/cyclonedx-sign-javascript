@@ -42,7 +42,8 @@ import {
 } from 'node:crypto';
 
 import { sign, verify } from '../src/jsf/index.js';
-import type { JsonObject, JsfAlgorithm } from '../src/types.js';
+import type { JsonObject } from '../src/types.js';
+import type { JsfAlgorithm } from '../src/jsf/types.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, 'fixtures');
@@ -115,37 +116,37 @@ const ASYMMETRIC: AsymmetricCase[] = [
 
 describe('Fixture: committed envelopes verify', () => {
   for (const { algorithm } of ASYMMETRIC) {
-    it(`${algorithm} envelope verifies with its embedded publicKey`, () => {
+    it(`${algorithm} envelope verifies with its embedded publicKey`, async () => {
       const env = readFixture(`${algorithm}.json`);
-      const result = verify(env);
+      const result = await verify(env);
       expect(result.valid).toBe(true);
-      expect(result.algorithm).toBe(algorithm);
+      expect(result.signers[0]?.algorithm).toBe(algorithm);
     });
 
-    it(`${algorithm} envelope rejects a tampered payload`, () => {
+    it(`${algorithm} envelope rejects a tampered payload`, async () => {
       const env = readFixture(`${algorithm}.json`);
       // Mutate a top-level field; the signature must no longer verify.
       const tampered: JsonObject = { ...env, subject: 'assessment-tampered' };
-      const result = verify(tampered);
+      const result = await verify(tampered);
       expect(result.valid).toBe(false);
-      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.signers[0]?.errors.length).toBeGreaterThan(0);
     });
   }
 
   for (const alg of ['HS256', 'HS384', 'HS512'] as const) {
-    it(`${alg} envelope verifies with the shared secret`, () => {
+    it(`${alg} envelope verifies with the shared secret`, async () => {
       const env = readFixture(`${alg}.json`);
       const secret = Buffer.from(HMAC_SECRET_HEX, 'hex');
-      const result = verify(env, { publicKey: secret });
+      const result = await verify(env, { publicKey: secret });
       expect(result.valid).toBe(true);
-      expect(result.algorithm).toBe(alg);
+      expect(result.signers[0]?.algorithm).toBe(alg);
     });
 
-    it(`${alg} envelope rejects a tampered payload`, () => {
+    it(`${alg} envelope rejects a tampered payload`, async () => {
       const env = readFixture(`${alg}.json`);
       const secret = Buffer.from(HMAC_SECRET_HEX, 'hex');
       const tampered: JsonObject = { ...env, subject: 'assessment-tampered' };
-      expect(verify(tampered, { publicKey: secret }).valid).toBe(false);
+      expect((await verify(tampered, { publicKey: secret })).valid).toBe(false);
     });
   }
 });
@@ -157,12 +158,14 @@ describe('Fixture: round trip using committed PEM keys', () => {
   };
 
   for (const { algorithm, privateKeyFile } of ASYMMETRIC) {
-    it(`${algorithm} signs and verifies with the committed key`, () => {
+    it(`${algorithm} signs and verifies with the committed key`, async () => {
       const pem = readKey(privateKeyFile);
-      const signed = sign(payload, { algorithm, privateKey: pem });
-      const result = verify(signed);
+      const signed = await sign(payload, {
+        signer: { algorithm, privateKey: pem },
+      });
+      const result = await verify(signed);
       expect(result.valid).toBe(true);
-      expect(result.algorithm).toBe(algorithm);
+      expect(result.signers[0]?.algorithm).toBe(algorithm);
     });
   }
 });
@@ -226,55 +229,50 @@ const INTEROP: InteropCase[] = [
 
 describe('Interop: node-webpki.org reference fixtures verify', () => {
   for (const c of INTEROP) {
-    it(`${c.file} verifies`, () => {
+    it(`${c.file} verifies`, async () => {
       const env = readInterop(c.file);
       let result;
       switch (c.keySource) {
         case 'embedded':
-          result = verify(env);
+          result = await verify(env);
           break;
         case 'committed-public': {
           if (!c.publicKeyFile) throw new Error('missing publicKeyFile');
           const pem = readFileSync(join(INTEROP_DIR, c.publicKeyFile), 'utf8');
-          result = verify(env, { publicKey: pem });
+          result = await verify(env, { publicKey: pem });
           break;
         }
         case 'derived-from-private': {
           if (!c.privateKeyFile) throw new Error('missing privateKeyFile');
           const privPem = readFileSync(join(INTEROP_DIR, c.privateKeyFile), 'utf8');
           const pubPem = derivePublicPem(privPem);
-          result = verify(env, { publicKey: pubPem });
+          result = await verify(env, { publicKey: pubPem });
           break;
         }
         case 'leaf-cert': {
           const pub = leafPublicKeyFrom(env);
-          result = verify(env, { publicKey: pub });
+          result = await verify(env, { publicKey: pub });
           break;
         }
       }
       expect(result.valid).toBe(true);
-      expect(result.algorithm).toBe(c.algorithm);
+      expect(result.signers[0]?.algorithm).toBe(c.algorithm);
     });
   }
 
   it('every committed interop fixture is covered by a test case', () => {
-    // Guardrail: if someone adds a new envelope to the interop
-    // directory without wiring a case up, this test fails loudly.
     const jsonFiles = readdirSync(INTEROP_DIR)
       .filter((name) => name.endsWith('.json'))
-      // Skip encryption envelopes; JEF is not in scope for this package.
       .filter((name) => !name.includes('ecdh-es'));
     const covered = new Set(INTEROP.map((c) => c.file));
     const uncovered = jsonFiles.filter((n) => !covered.has(n));
     expect(uncovered).toEqual([]);
   });
 
-  it('tampered interop payload is rejected', () => {
-    // Spot check: pick one interop envelope and assert the signature
-    // check still bites after a field mutation.
+  it('tampered interop payload is rejected', async () => {
     const env = readInterop('p256#es256@jwk.json');
     const tampered: JsonObject = { ...env, name: 'Mallory' };
-    const result = verify(tampered);
+    const result = await verify(tampered);
     expect(result.valid).toBe(false);
   });
 });

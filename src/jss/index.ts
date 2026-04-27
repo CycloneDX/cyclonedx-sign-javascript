@@ -15,6 +15,8 @@ export { sign, verify } from './sign.js';
 export type {
   JssAlgorithm,
   JssSigner,
+  JssSignerInput,
+  JssSignerVerifyResult,
   JssSignOptions,
   JssVerifyOptions,
   JssVerifyResult,

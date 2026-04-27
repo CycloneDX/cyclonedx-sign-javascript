@@ -139,4 +139,49 @@ describe('JCS', () => {
       expect(text(a)).toBe(text(b));
     });
   });
+
+  describe('depth limit (DoS protection)', () => {
+    function nest(depth: number): unknown {
+      let cur: unknown = 0;
+      for (let i = 0; i < depth; i++) cur = { a: cur };
+      return cur;
+    }
+
+    it('accepts realistic depths', () => {
+      // 100 levels is far above any real-world envelope.
+      const ok = nest(100);
+      expect(() => canonicalize(ok as Parameters<typeof canonicalize>[0])).not.toThrow();
+    });
+
+    it('rejects pathologically deep nesting at the default limit', () => {
+      const bad = nest(1500);
+      expect(() => canonicalize(bad as Parameters<typeof canonicalize>[0])).toThrow(JcsError);
+      expect(() => canonicalize(bad as Parameters<typeof canonicalize>[0])).toThrow(/nested deeper/);
+    });
+
+    it('honours a custom maxDepth', () => {
+      const obj = nest(50);
+      expect(() =>
+        canonicalize(obj as Parameters<typeof canonicalize>[0], { maxDepth: 10 }),
+      ).toThrow(/nested deeper than 10/);
+      expect(() =>
+        canonicalize(obj as Parameters<typeof canonicalize>[0], { maxDepth: 100 }),
+      ).not.toThrow();
+    });
+
+    it('rejects invalid maxDepth values', () => {
+      expect(() => canonicalize({ a: 1 }, { maxDepth: 0 })).toThrow(JcsError);
+      expect(() => canonicalize({ a: 1 }, { maxDepth: -1 })).toThrow(JcsError);
+      expect(() => canonicalize({ a: 1 }, { maxDepth: 1.5 })).toThrow(JcsError);
+    });
+
+    it('counts arrays as one level of depth', () => {
+      // Twenty levels of nested arrays.
+      let arr: unknown = 1;
+      for (let i = 0; i < 20; i++) arr = [arr];
+      expect(() =>
+        canonicalize(arr as Parameters<typeof canonicalize>[0], { maxDepth: 19 }),
+      ).toThrow(/nested deeper/);
+    });
+  });
 });

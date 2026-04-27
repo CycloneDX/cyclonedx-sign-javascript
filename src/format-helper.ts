@@ -1,9 +1,9 @@
 /**
  * Format helper for sign and verify.
  *
- * Goal: give CycloneDX tool authors a single sign() and verify() that
- * route to the right JSON signing format based on the CycloneDX major
- * version they are targeting:
+ * Goal: give CycloneDX tool authors a single async sign() and verify()
+ * that route to the right JSON signing format based on the CycloneDX
+ * major version they target:
  *
  *   CycloneDxMajor.V1 -> JSF
  *   CycloneDxMajor.V2 -> JSS
@@ -17,16 +17,14 @@
  * Routing rules:
  *
  *   sign(subject, options)
- *     - Dispatches to the JSF sign when options.cyclonedxVersion is V1
- *       or absent.
- *     - Dispatches to the JSS sign when options.cyclonedxVersion is V2.
- *     - When cyclonedxVersion is omitted the default is V1 (JSF).
+ *     - Dispatches to JSF when options.cyclonedxVersion is V1 or absent.
+ *     - Dispatches to JSS when options.cyclonedxVersion is V2.
  *
  *   verify(subject, options?)
  *     - Uses options.cyclonedxVersion when provided.
  *     - Otherwise inspects the envelope via detectFormat() and maps
  *       the format back to a CycloneDxMajor value. JSF / V1 is the
- *       final fallback because that is what ships today.
+ *       final fallback.
  */
 
 import { sign as signJsf, verify as verifyJsf } from './jsf/sign.js';
@@ -40,43 +38,26 @@ import type { JssSignOptions, JssVerifyOptions, JssVerifyResult } from './jss/ty
 const DEFAULT_SIGNATURE_PROPERTY = 'signature';
 
 /**
- * Options accepted by the top-level sign() function.
- *
- * The discriminated union keeps the JSS and JSF option surfaces
- * distinct while letting callers omit cyclonedxVersion for the JSF
- * default.
+ * Top-level sign options, discriminated by `cyclonedxVersion`.
  */
 export type SignOptions =
   | (JsfSignOptions & { cyclonedxVersion?: CycloneDxMajor.V1 })
   | (JssSignOptions & { cyclonedxVersion: CycloneDxMajor.V2 });
 
-/** Options accepted by the top-level verify() function. */
 export type VerifyOptions =
   | (JsfVerifyOptions & { cyclonedxVersion?: CycloneDxMajor.V1 })
   | (JssVerifyOptions & { cyclonedxVersion: CycloneDxMajor.V2 });
 
-/**
- * Result returned by the top-level verify() function.
- *
- * Always carries the cyclonedxVersion field so callers can tell which
- * code path produced the result. The remaining fields mirror the
- * format-specific result shapes.
- */
 export type VerifyResult =
   | (JsfVerifyResult & { cyclonedxVersion: CycloneDxMajor.V1 })
   | (JssVerifyResult & { cyclonedxVersion: CycloneDxMajor.V2 });
 
 /**
- * Sign a JSON object for the given CycloneDX major version.
- *
- * The subject can be the whole BOM or any JSON object inside it (a
- * declarations block, a signatory, a formulation entry, and so on).
- * Only the subject is signed; the library does not rewrite anything
- * outside of it.
- *
- * Defaults to CycloneDxMajor.V1 when cyclonedxVersion is omitted.
+ * Sign a JSON object for the given CycloneDX major version. Async
+ * because remote signers (HSM, KMS) are async; the in-process
+ * node-crypto path resolves on the same tick.
  */
-export function sign(subject: JsonObject, options: SignOptions): JsonObject {
+export async function sign(subject: JsonObject, options: SignOptions): Promise<JsonObject> {
   const version = options.cyclonedxVersion ?? CycloneDxMajor.V1;
   switch (version) {
     case CycloneDxMajor.V1:
@@ -89,27 +70,24 @@ export function sign(subject: JsonObject, options: SignOptions): JsonObject {
 }
 
 /**
- * Verify a signed JSON object.
- *
- * The cyclonedxVersion option picks the verifying format. When it is
- * omitted the helper inspects the envelope shape and falls back to V1
- * (JSF) when the shape is ambiguous.
+ * Verify a signed JSON object. Returns the format-specific result
+ * shape with `cyclonedxVersion` attached for caller introspection.
  */
-export function verify(
+export async function verify(
   subject: JsonObject,
   options: VerifyOptions = {},
-): VerifyResult {
+): Promise<VerifyResult> {
   const version =
     options.cyclonedxVersion ??
     detectCycloneDxMajor(subject, options.signatureProperty) ??
     CycloneDxMajor.V1;
   switch (version) {
     case CycloneDxMajor.V1: {
-      const result = verifyJsf(subject, options as JsfVerifyOptions);
+      const result = await verifyJsf(subject, options as JsfVerifyOptions);
       return { ...result, cyclonedxVersion: CycloneDxMajor.V1 };
     }
     case CycloneDxMajor.V2: {
-      const result = verifyJss(subject, options as JssVerifyOptions);
+      const result = await verifyJss(subject, options as JssVerifyOptions);
       return { ...result, cyclonedxVersion: CycloneDxMajor.V2 };
     }
     default:
@@ -119,51 +97,43 @@ export function verify(
 
 /**
  * Inspect an envelope and guess which signature format produced it.
- *
- * Returns null when the shape is ambiguous. The JSF shape is the only
- * one currently recognized; the JSS detection branch is a placeholder
- * that will grow once the X.590 envelope layout is finalized.
- *
- * This utility is exposed for callers that need format-level
- * introspection (for example a generic viewer). Most callers should
- * prefer passing cyclonedxVersion explicitly.
+ * Returns null when the shape is ambiguous. JSF detects on the
+ * presence of a signaturecore (algorithm + value), or a wrapper with
+ * a `signers` or `chain` array. JSS detection is a placeholder until
+ * X.590 specifies a distinctive marker.
  */
 export function detectFormat(
   subject: JsonObject,
   signatureProperty: string = DEFAULT_SIGNATURE_PROPERTY,
 ): SignatureFormat | null {
-  // eslint-disable-next-line security/detect-object-injection -- `signatureProperty` is either caller-controlled or the default "signature" literal; the lookup is the documented behavior of this function.
+  // eslint-disable-next-line security/detect-object-injection -- caller-controlled or default
   const candidate = subject[signatureProperty];
   if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
     return null;
   }
-  const signer = candidate as Record<string, unknown>;
+  const slot = candidate as Record<string, unknown>;
 
-  // JSS detection placeholder. When the X.590 envelope specifies a
-  // distinctive marker field (for example a $schema hint, a version
-  // tag, or a different property layout), return 'jss' here.
-  if (typeof signer.format === 'string' && signer.format.toLowerCase() === 'jss') {
+  // JSS detection placeholder.
+  if (typeof slot.format === 'string' && slot.format.toLowerCase() === 'jss') {
     return 'jss';
   }
 
-  // JSF shape: algorithm and value are both required strings.
-  if (typeof signer.algorithm === 'string' && typeof signer.value === 'string') {
+  // JSF: bare signaturecore.
+  if (typeof slot.algorithm === 'string' && typeof slot.value === 'string') {
+    return 'jsf';
+  }
+
+  // JSF: multisignature or signaturechain wrapper.
+  if (Array.isArray(slot.signers) || Array.isArray(slot.chain)) {
     return 'jsf';
   }
 
   return null;
 }
 
-/**
- * Map a CycloneDxMajor enum value to the internal signature format
- * identifier. Exposed for callers that interoperate with lower-level
- * code that still thinks in format terms.
- */
 export function cyclonedxFormat(version: CycloneDxMajor): SignatureFormat {
   return version === CycloneDxMajor.V2 ? 'jss' : 'jsf';
 }
-
-// -- Internal helpers --------------------------------------------------------
 
 function detectCycloneDxMajor(
   subject: JsonObject,

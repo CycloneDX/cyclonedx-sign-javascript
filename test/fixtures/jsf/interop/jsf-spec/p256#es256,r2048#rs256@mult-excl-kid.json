@@ -1,0 +1,21 @@
+{
+  "mySignedData": "something",
+  "myUnsignedData": "something else",
+  "signature": {
+    "signers": [
+      {
+        "algorithm": "ES256",
+        "keyId": "example.com:p256",
+        "value": "E6rT21XjoXA-g00vmO5vQF-KKZnrr14jDsQ4mEdhJtdMTT0X0eMrJeDx_Prm0emHjttjid9UqIW25eEPS7ux4g"
+      },
+      {
+        "algorithm": "RS256",
+        "keyId": "example.com:r2048",
+        "value": "XyD8ZqqhknW-l8ht_ryvhp8QDuKqB8dcs5F-vDKKMWXVbiWFSDNYpoUsEdHA1P1GU0med2fVCGHNLar2eiX_kXn9gApqwwi_aDikpCEJLDcEGdajpIc_w2q3DgsYoIyoYWDOtcOpvzgrW5bMMi-hB3xyZ21msTA122zdroqDzFmILx6djpQgqZXry72HycGzvm-yT9DylfNW3B0g3esoW7abztrwp-e6KE1UOXPKxdMvuJu52lCgt2sZSdolbXudc0GH6nBUTNXehR1VbGhW0vtO9xXunP4KhCFNbOSf83Mz_3Yf2rO6rGCTFsgWvQ6cAaCt-v18MddkuLX68goOxQ"
+      }
+    ],
+    "excludes": [
+      "myUnsignedData"
+    ]
+  }
+}

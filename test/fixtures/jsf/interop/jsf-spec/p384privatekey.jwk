@@ -1,0 +1,8 @@
+{
+  "kid": "example.com:p384",
+  "kty": "EC",
+  "crv": "P-384",
+  "x": "o4lIdIXzdJro4jU9g-2q-__i5WcutpJaWwOeSgKL8x6nxKWOPD5rH-POQhJ79l6t",
+  "y": "MLnyLIGdTO2feJkCW3rWWKG3elhi1Zmbp068Ejb_1LuI-2cNQsRUqb16TfK588_N",
+  "d": "woqAfcmqQ5T0rD-FlnTqjXw8wLOIXACCIy4SoWwy8jiSc_BRVH5jGPwZZUyvP1vd"
+}

@@ -1,0 +1,8 @@
+{
+  "kid": "example.com:p521",
+  "kty": "EC",
+  "crv": "P-521",
+  "x": "AVb-eD8V1UAzN8GWoUypQ_8xSABA4PwUZ1O_fanjLvbwpuyoniN98ljWt3y93TCrDAqe1089tLCfpJhre8M5frBs",
+  "y": "ABORvO-p61zLrGCtgqqqFcQJX_ljnoJ7iDd1IIKZSyksI8aElmtJFCRVSgCyU_P7mSmilqVVaBWhE9fqRHcQ2u_c",
+  "d": "AUxbUwj3PKhK08nxKFFRToiriDJyp_bUv0puyt0qch9UwQ5qCjqBqSPAOB5RyvPKy0XwKDhXJGeAGsVqKzsUMRxA"
+}

@@ -1,0 +1,17 @@
+{
+  "mySignedData": "something",
+  "myUnsignedData": "something else",
+  "signature": {
+    "algorithm": "ES256",
+    "publicKey": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "6BKxpty8cI-exDzCkh-goU6dXq3MbcY0cd1LaAxiNrU",
+      "y": "mCbcvUzm44j3Lt2b5BPyQloQ91tf2D2V-gzeUxWaUdg"
+    },
+    "excludes": [
+      "myUnsignedData"
+    ],
+    "value": "EWkjHQTGBptNmhCsRw2wHqX64XpWS_4n4ba3DJ8HisvWl4eZYHsx6QCe7NIrwYHJOB6Tr-yOqN3G7oH9zH27jQ"
+  }
+}

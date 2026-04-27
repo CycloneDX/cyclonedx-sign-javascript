@@ -66,6 +66,21 @@ export class JsfSignError extends JsfError {
  */
 export class JsfVerifyError extends JsfError {}
 
+/**
+ * Caller passed a malformed multi or chain signer input — empty
+ * `signers` array, both `signer` and `signers` provided, `mode` set
+ * with a single signer, or the like.
+ */
+export class JsfMultiSignerInputError extends JsfInputError {}
+
+/**
+ * Append-on-chain refused because the source envelope is not in chain
+ * mode (or, for `appendMultiSigner`, not in multi mode). Promoting
+ * across modes is not lossless because canonical bytes change with
+ * the wrapper shape.
+ */
+export class JsfChainOrderError extends JsfEnvelopeError {}
+
 // -- JSS ---------------------------------------------------------------------
 
 /** Root of the JSS-specific error subtree. */

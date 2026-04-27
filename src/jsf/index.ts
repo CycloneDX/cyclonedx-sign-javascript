@@ -10,7 +10,13 @@
  * adds a CycloneDX-major-aware sign / verify helper on top.
  */
 
-export { sign, verify, computeCanonicalInput } from './sign.js';
+export {
+  sign,
+  verify,
+  appendChainSigner,
+  appendMultiSigner,
+  computeCanonicalInputs,
+} from './sign.js';
 
 export {
   getAlgorithmSpec,
@@ -31,9 +37,15 @@ export type {
   JsfAsymmetricAlgorithm,
 } from './algorithms.js';
 
+export { JSF_BINDING, JsfBinding } from './binding.js';
+
 export type {
   JsfAlgorithm,
+  JsfAppendOptions,
+  JsfCanonicalInputState,
   JsfSigner,
+  JsfSignerInput,
+  JsfSignerVerifyResult,
   JsfSignOptions,
   JsfVerifyOptions,
   JsfVerifyResult,

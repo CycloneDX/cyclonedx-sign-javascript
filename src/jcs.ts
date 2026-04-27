@@ -41,13 +41,31 @@ const SHORT_ESCAPES: Record<number, string> = {
 };
 
 /**
+ * Default maximum nesting depth. Pathologically deep JSON would cause
+ * the recursive canonicalizer to overflow Node's default 1 MB stack at
+ * roughly 10k levels. The cap is set well below that and well above
+ * any realistic JSON envelope (CycloneDX BOMs in the wild stay under
+ * a few dozen levels). Callers can override via `MaxDepthOptions`.
+ *
+ * Defends against CWE-674 / CWE-400: a verifier accepting an
+ * attacker-supplied envelope with deeply nested data must not crash.
+ */
+const DEFAULT_MAX_DEPTH = 1000;
+
+export interface MaxDepthOptions {
+  /** Maximum nested JSON depth. Defaults to 1000. */
+  maxDepth?: number;
+}
+
+/**
  * Canonicalize a JSON value into its UTF-8 byte sequence per RFC 8785.
  *
  * Throws JcsError for values JCS rejects (non-finite numbers,
- * undefined entries, non-string object keys, functions, and so on).
+ * undefined entries, non-string object keys, functions, and so on)
+ * and for inputs that exceed `options.maxDepth` (default 1000).
  */
-export function canonicalize(value: JsonValue): Uint8Array {
-  const text = canonicalizeToString(value);
+export function canonicalize(value: JsonValue, options?: MaxDepthOptions): Uint8Array {
+  const text = canonicalizeToString(value, options);
   return new TextEncoder().encode(text);
 }
 
@@ -55,13 +73,17 @@ export function canonicalize(value: JsonValue): Uint8Array {
  * Canonicalize a JSON value and return the JCS text form. The result
  * is identical to passing `canonicalize()` through a UTF-8 decoder.
  */
-export function canonicalizeToString(value: JsonValue): string {
+export function canonicalizeToString(value: JsonValue, options?: MaxDepthOptions): string {
   const out: string[] = [];
-  writeValue(value, out);
+  const maxDepth = options?.maxDepth ?? DEFAULT_MAX_DEPTH;
+  if (!Number.isInteger(maxDepth) || maxDepth < 1) {
+    throw new JcsError(`JCS maxDepth must be a positive integer; got ${String(maxDepth)}`);
+  }
+  writeValue(value, out, 0, maxDepth);
   return out.join('');
 }
 
-function writeValue(value: unknown, out: string[]): void {
+function writeValue(value: unknown, out: string[], depth: number, maxDepth: number): void {
   if (value === null) {
     out.push('null');
     return;
@@ -77,11 +99,17 @@ function writeValue(value: unknown, out: string[]): void {
       writeString(value, out);
       return;
     case 'object':
+      if (depth >= maxDepth) {
+        throw new JcsError(
+          `JCS rejects input nested deeper than ${maxDepth} levels (DoS protection); ` +
+            `pass { maxDepth: N } to canonicalize() to override`,
+        );
+      }
       if (Array.isArray(value)) {
-        writeArray(value, out);
+        writeArray(value, out, depth + 1, maxDepth);
         return;
       }
-      writeObject(value as Record<string, unknown>, out);
+      writeObject(value as Record<string, unknown>, out, depth + 1, maxDepth);
       return;
     default:
       throw new JcsError(`JCS cannot canonicalize a ${typeof value} value`);
@@ -141,7 +169,7 @@ function escapeFor(code: number): string {
   return '\\u' + code.toString(16).padStart(4, '0');
 }
 
-function writeArray(value: unknown[], out: string[]): void {
+function writeArray(value: unknown[], out: string[], depth: number, maxDepth: number): void {
   out.push('[');
   for (let i = 0; i < value.length; i += 1) {
     if (i > 0) {
@@ -155,12 +183,12 @@ function writeArray(value: unknown[], out: string[]): void {
       // explicit error so a caller's bug does not slip through.
       throw new JcsError(`JCS cannot canonicalize an array slot at index ${i} that is undefined`);
     }
-    writeValue(item, out);
+    writeValue(item, out, depth, maxDepth);
   }
   out.push(']');
 }
 
-function writeObject(value: Record<string, unknown>, out: string[]): void {
+function writeObject(value: Record<string, unknown>, out: string[], depth: number, maxDepth: number): void {
   // RFC 8785 § 3.2.3: object members are sorted by the UTF-16 code
   // unit sequence of the property name. JS string comparison already
   // compares code units, so `localeCompare` would be wrong. Use the
@@ -190,7 +218,7 @@ function writeObject(value: Record<string, unknown>, out: string[]): void {
     writeString(key, out);
     out.push(':');
     // eslint-disable-next-line security/detect-object-injection -- `key` was sourced from Object.keys(value) above.
-    writeValue(value[key], out);
+    writeValue(value[key], out, depth, maxDepth);
   }
   out.push('}');
 }
