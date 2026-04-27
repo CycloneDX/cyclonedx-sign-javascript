@@ -1,5 +1,6 @@
 [![shield_npm-version]][link_npm]
 [![shield_gh-workflow-test]][link_gh-workflow-test]
+[![shield_quality]][link_codacy]
 [![shield_coverage]][link_codacy]
 [![shield_license]][license_file]  
 [![shield_website]][link_website]
@@ -658,6 +659,7 @@ Apache License 2.0. See [LICENSE][license_file].
 * [CycloneDX][link_website]
 
 [shield_gh-workflow-test]: https://img.shields.io/github/actions/workflow/status/CycloneDX/cyclonedx-sign-javascript/ci.yml?branch=main&logo=GitHub&logoColor=white "tests"
+[shield_quality]: https://img.shields.io/codacy/grade/f0382a1f070941c68c4a18ed05f971cb?logo=Codacy&logoColor=white "code quality"
 [shield_coverage]: https://img.shields.io/codacy/coverage/f0382a1f070941c68c4a18ed05f971cb?logo=Codacy&logoColor=white "test coverage"
 [shield_npm-version]: https://img.shields.io/npm/v/%40cyclonedx%2fsign/latest?label=npm&logo=npm&logoColor=white "npm"
 [shield_license]: https://img.shields.io/github/license/CycloneDX/cyclonedx-sign-javascript?logo=open%20source%20initiative&logoColor=white "license"
