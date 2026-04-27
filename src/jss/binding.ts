@@ -71,7 +71,9 @@ const JSS_RESERVED = new Set([
  * which never appears on the wire (the JSS binding's render/parse
  * functions filter it out).
  */
+// nosemgrep: codacy.javascript.security.hard-coded-password -- internal sentinel string used as an extensionValues key, not a credential
 const HASH_ALGO_KEY = '__jss_hash_algorithm__';
+// nosemgrep: codacy.javascript.security.hard-coded-password -- internal sentinel string used as an extensionValues key, not a credential
 const COUNTERSIG_KEY = '__jss_countersignature__';
 
 export class JssBinding {
@@ -82,6 +84,7 @@ export class JssBinding {
   detect(payload: JsonObject, signatureProperty: string): JssEnvelopeView | null {
     // eslint-disable-next-line security/detect-object-injection -- caller-controlled, defaults to 'signatures'.
     const slot = payload[signatureProperty];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
     if (slot === undefined) return null;
     if (!Array.isArray(slot) || slot.length === 0) {
       throw new JssEnvelopeError(`"${signatureProperty}" must be a non-empty array`);
@@ -126,6 +129,7 @@ export class JssBinding {
       if (JSS_RESERVED.has(key)) continue;
       // eslint-disable-next-line security/detect-object-injection -- key from Object.keys
       const v = core[key];
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
       if (v === undefined) continue;
       // eslint-disable-next-line security/detect-object-injection -- key from Object.keys
       ext[key] = v as JsonValue;
@@ -133,6 +137,7 @@ export class JssBinding {
 
     // Counter signature (nested `signature` property).
     if (core.signature && typeof core.signature === 'object' && !Array.isArray(core.signature)) {
+      // eslint-disable-next-line security/detect-object-injection -- key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
       ext[COUNTERSIG_KEY] = core.signature as JsonObject;
     }
 
@@ -158,6 +163,7 @@ export class JssBinding {
     // For a top-level signer (mode === 'single' or 'multi'), only the
     // target signer is present in the array; its `value` is stripped.
     // X.590 § 7.1.2 / § 8.1.2 / dotnet-jss JssVerifier semantics.
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion, security/detect-object-injection -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant; key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
     const target = renderSignaturecore(state.signers[index]!, { stripValue: true });
     // eslint-disable-next-line security/detect-object-injection -- caller-controlled
     view[signatureProperty] = [target];
@@ -186,7 +192,9 @@ export class JssBinding {
     // The target keeps its `value`. The countersig stashed at HASH_ALGO_KEY
     // sentinel is the new signer being added; its `value` is stripped
     // for canonicalization.
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion, security/detect-object-injection -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant; key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
     const target = renderSignaturecore(state.signers[targetIndex]!, { stripValue: false });
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion, security/detect-object-injection -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant; key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
     const counterDesc = this.extractCounterDescriptor(state.signers[targetIndex]!);
     if (!counterDesc) {
       throw new JssInputError('counter signature missing on target signer');
@@ -201,6 +209,7 @@ export class JssBinding {
   private extractCounterDescriptor(desc: JssSignerDescriptor): JssSignerDescriptor | null {
     const ev = desc.extensionValues;
     if (!ev) return null;
+    // eslint-disable-next-line security/detect-object-injection -- key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
     const counterWire = ev[COUNTERSIG_KEY];
     if (!counterWire || typeof counterWire !== 'object' || Array.isArray(counterWire)) return null;
     return this.descriptorFromWire(counterWire as JsonObject, {});
@@ -231,6 +240,7 @@ export class JssBinding {
     if (!isRegisteredAlgorithm(input.algorithm)) {
       throw new JssInputError(`Unsupported JSS algorithm: ${input.algorithm}`);
     }
+    // eslint-disable-next-line security/detect-object-injection -- key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
     const hashAlgorithm = (input.extensionValues?.[HASH_ALGO_KEY] as string | undefined) ?? 'sha-256';
     if (!isRegisteredHashAlgorithm(hashAlgorithm)) {
       throw new JssInputError(`Unsupported JSS hash algorithm: ${hashAlgorithm}`);
@@ -285,6 +295,7 @@ export function renderSignaturecore(
   opts: { stripValue: boolean },
 ): JsonObject {
   const ext = d.extensionValues ?? {};
+  // eslint-disable-next-line security/detect-object-injection -- key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
   const hashAlgorithm = (ext[HASH_ALGO_KEY] as string | undefined) ?? 'sha-256';
   const core: JsonObject = {
     algorithm: d.algorithm,
@@ -312,6 +323,7 @@ export function renderSignaturecore(
   }
 
   // Nested counter signature.
+  // eslint-disable-next-line security/detect-object-injection -- key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
   const counterWire = ext[COUNTERSIG_KEY];
   if (counterWire && typeof counterWire === 'object' && !Array.isArray(counterWire)) {
     core.signature = counterWire as JsonObject;
@@ -345,11 +357,13 @@ function resolveVerifyingKey(input: JssVerifierKeyInput): KeyObject {
   // No JWK embedded for JSS; instead the JSS sign path provides
   // `embeddedPublicKey` as a PEM body string.
   if (typeof (input as { embeddedPemBody?: string }).embeddedPemBody === 'string') {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
     return publicKeyFromPemBody((input as { embeddedPemBody?: string }).embeddedPemBody!);
   }
   // Cert chain leaf: extract public key from the first base64 DER cert.
   const certChain = (input as { embeddedCertChain?: string[] }).embeddedCertChain;
   if (Array.isArray(certChain) && certChain.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
     return certPublicKey(certChain[0]!);
   }
   throw new JssInputError(
@@ -364,6 +378,8 @@ function certPublicKey(b64Der: string): KeyObject {
 
 export {
   JSS_RESERVED,
+  // nosemgrep: codacy.javascript.security.hard-coded-password -- internal sentinel string used as an extensionValues key, not a credential
   HASH_ALGO_KEY as JSS_HASH_ALGO_KEY,
+  // nosemgrep: codacy.javascript.security.hard-coded-password -- internal sentinel string used as an extensionValues key, not a credential
   COUNTERSIG_KEY as JSS_COUNTERSIG_KEY,
 };

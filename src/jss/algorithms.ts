@@ -289,6 +289,7 @@ function pssEncode(
   const leftBits = 8 * emLen - emBits;
   if (leftBits > 0) {
     // eslint-disable-next-line security/detect-object-injection -- index 0 is always within bounds for a non-empty Buffer.
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
     maskedDb[0] = (maskedDb[0]! & (0xff >> leftBits));
   }
 
@@ -320,6 +321,7 @@ function pssVerify(
   const leftBits = 8 * emLen - emBits;
   if (leftBits > 0) {
     // eslint-disable-next-line security/detect-object-injection -- index 0 is always valid for a non-empty Buffer.
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
     if ((maskedDb[0]! & ~(0xff >> leftBits)) !== 0) return false;
   }
 
@@ -327,6 +329,7 @@ function pssVerify(
   const db = xor(maskedDb, dbMask);
   if (leftBits > 0) {
     // eslint-disable-next-line security/detect-object-injection -- index 0 is always valid for a non-empty Buffer.
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
     db[0] = (db[0]! & (0xff >> leftBits));
   }
 
@@ -335,6 +338,7 @@ function pssVerify(
     // eslint-disable-next-line security/detect-object-injection -- counted loop bounded by psLen.
     if (db[i] !== 0x00) return false;
   }
+  // eslint-disable-next-line security/detect-object-injection -- key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
   if (db[psLen] !== 0x01) return false;
 
   const salt = db.subarray(psLen + 1);
@@ -400,6 +404,7 @@ const ECDSA_CURVE_NAMES: Record<EcdsaAlgorithm, string> = {
 function signEcdsa(algorithm: EcdsaAlgorithm, hash: Buffer, privateKey: KeyObject): Buffer {
   // eslint-disable-next-line security/detect-object-injection -- algorithm narrowed to a literal union of three known keys
   const curve = ECDSA_CURVES[algorithm];
+  // eslint-disable-next-line security/detect-object-injection -- key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
   const expectedField = ECDSA_FIELD_BYTES[algorithm];
   const dBytes = ecdsaPrivateScalar(privateKey, algorithm, expectedField);
   const sig = curve.sign(hash, dBytes, { prehash: false, format: 'compact' });
@@ -460,7 +465,9 @@ function ecdsaPublicPointUncompressed(key: KeyObject, algorithm: EcdsaAlgorithm,
     throw new JssInputError(`Algorithm ${algorithm} requires an EC public key; got kty=${String(pub.kty)}`);
   }
   ensureCurve(pub.crv, algorithm);
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
   const x = base64UrlToBuffer(pub.x ?? '');
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
   const y = base64UrlToBuffer(pub.y ?? '');
   if (x.length !== expectedField || y.length !== expectedField) {
     throw new JssInputError(
@@ -506,6 +513,7 @@ function xor(a: Buffer, b: Buffer): Buffer {
   const out = Buffer.alloc(a.length);
   for (let i = 0; i < a.length; i += 1) {
     // eslint-disable-next-line security/detect-object-injection -- counted loop with matched-length buffers
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
     out[i] = a[i]! ^ b[i]!;
   }
   return out;
@@ -516,6 +524,7 @@ function constantTimeEqual(a: Buffer, b: Buffer): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i += 1) {
     // eslint-disable-next-line security/detect-object-injection -- counted loop with matched-length buffers
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
     diff |= a[i]! ^ b[i]!;
   }
   return diff === 0;

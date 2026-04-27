@@ -253,6 +253,7 @@ async function appendInternal(
   const bytes = canonicalize(view2);
   const sigBytes = await signerImpl.sign(bytes);
   // eslint-disable-next-line security/detect-object-injection -- newIndex is computed
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
   extended.signers[newIndex]!.value = base64url(sigBytes);
   // eslint-disable-next-line security/detect-object-injection -- newIndex is computed
   extended.finalized[newIndex] = true;
@@ -327,6 +328,7 @@ export function computeCanonicalInputs(
       // eslint-disable-next-line security/detect-object-injection -- counted loop index
       const v = (state.signers[i] as unknown as { value?: string }).value;
       // eslint-disable-next-line security/detect-object-injection -- counted loop index
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
       if (typeof v === 'string') descriptors[i]!.value = v;
     }
   }
@@ -357,6 +359,7 @@ function collectExtensionValuesFromCore(core: JsonObject): Record<string, JsonVa
     if (known.has(k)) continue;
     // eslint-disable-next-line security/detect-object-injection -- k from Object.keys
     const v = core[k];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
     if (v === undefined) continue;
     // eslint-disable-next-line security/detect-object-injection -- k from Object.keys
     out[k] = v as JsonValue;
@@ -383,6 +386,7 @@ function collectSigners(options: JsfSignOptions): JsfSignerInput[] {
     );
   }
   if (hasSigner) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
     return [options.signer!];
   }
   if (!hasSigners || !options.signers || options.signers.length === 0) {

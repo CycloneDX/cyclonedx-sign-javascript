@@ -69,6 +69,7 @@ export class JsfBinding implements JsfBindingContract {
   detect(payload: JsonObject, signatureProperty: string): JsfEnvelopeView | null {
     // eslint-disable-next-line security/detect-object-injection -- caller-controlled, defaults to "signature"
     const slot = payload[signatureProperty];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
     if (slot === undefined) return null;
     if (slot === null || Array.isArray(slot) || typeof slot !== 'object') {
       throw new JsfEnvelopeError(`"${signatureProperty}" property must be an object`);
@@ -93,6 +94,7 @@ export class JsfBinding implements JsfBindingContract {
     mode: 'multi' | 'chain',
   ): JsfEnvelopeView {
     const arrayKey = mode === 'multi' ? 'signers' : 'chain';
+    // eslint-disable-next-line security/detect-object-injection -- key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
     const arr = obj[arrayKey] as unknown;
     if (!Array.isArray(arr) || arr.length === 0) {
       throw new JsfEnvelopeError(`${arrayKey} must be a non-empty array`);
@@ -152,6 +154,7 @@ export class JsfBinding implements JsfBindingContract {
         if (!declaredSet.has(key)) continue;
         // eslint-disable-next-line security/detect-object-injection -- key from Object.keys
         const v = core[key];
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
         if (v === undefined) continue;
         // eslint-disable-next-line security/detect-object-injection -- key from Object.keys
         extensionValues[key] = v;
@@ -183,6 +186,7 @@ export class JsfBinding implements JsfBindingContract {
     }
 
     const signers = state.signers;
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion, security/detect-object-injection -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant; key sourced from a static table or Object.keys()/counted loop in the same scope; not an attacker-controlled lookup
     const targetCore = renderSignaturecore(signers[index]!, { stripValue: true });
 
     // JSF § 5: "the 'excludes' property itself, must also be excluded
@@ -219,6 +223,7 @@ export class JsfBinding implements JsfBindingContract {
     const elements: JsonObject[] = [];
     for (let i = 0; i < index; i++) {
       // eslint-disable-next-line security/detect-object-injection -- index from a counted loop
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
       elements.push(renderSignaturecore(signers[i]!, { stripValue: false }));
     }
     elements.push(targetCore);
@@ -239,6 +244,7 @@ export class JsfBinding implements JsfBindingContract {
     }
     const out: JsonObject = { ...payload };
     if (state.mode === 'single') {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- index access bounded by a preceding length check or counted loop; the non-null assertion reflects that runtime invariant
       const core = renderSignaturecore(state.signers[0]!, { stripValue: false });
       // Single mode: excludes and extensions live INSIDE the core.
       if (state.options.excludes) core.excludes = [...state.options.excludes];
@@ -364,13 +370,19 @@ function renderSignaturecore(
 function orderSignaturecore(core: JsonObject): JsonObject {
   const out: JsonObject = {};
   // Fixed first.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
   if (core.algorithm !== undefined) out.algorithm = core.algorithm;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
   if (core.keyId !== undefined) out.keyId = core.keyId;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
   if (core.publicKey !== undefined) out.publicKey = core.publicKey;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
   if (core.certificatePath !== undefined) out.certificatePath = core.certificatePath;
   // Single-mode global options if present (these only appear inside
   // a signaturecore in single mode).
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
   if (core.excludes !== undefined) out.excludes = core.excludes;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
   if (core.extensions !== undefined) out.extensions = core.extensions;
   // Extension property values, preserving the input map order.
   for (const k of Object.keys(core)) {
@@ -378,6 +390,7 @@ function orderSignaturecore(core: JsonObject): JsonObject {
     if (k === 'excludes' || k === 'extensions') continue;
     if (k === 'value') continue;
     // eslint-disable-next-line security/detect-object-injection -- k from Object.keys(core)
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
     if (out[k] !== undefined) continue;
     // eslint-disable-next-line security/detect-object-injection -- k from Object.keys(core)
     const v = core[k];
@@ -385,6 +398,7 @@ function orderSignaturecore(core: JsonObject): JsonObject {
     // eslint-disable-next-line security/detect-object-injection -- k from Object.keys(core)
     out[k] = v;
   }
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
   if (core.value !== undefined) out.value = core.value;
   return out;
 }

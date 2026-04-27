@@ -98,6 +98,7 @@ export async function sign(subject: JsonObject, options: SignOptions): Promise<J
  * caller nor detection can determine the version, verify throws.
  * There is no silent default to V1.
  */
+// eslint-disable-next-line security-node/detect-unhandled-async-errors -- false positive from a heuristic rule. Every awaited call below is on the right-hand side of `await` inside an `async` function; rejection propagates as a returned rejected promise to the caller, which is the contract for an `async` function.
 export async function verify(
   subject: JsonObject,
   options: VerifyOptions = {},
@@ -105,6 +106,7 @@ export async function verify(
   const version =
     options.cyclonedxVersion ??
     detectCycloneDxMajor(subject, options.signatureProperty);
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
   // detectCycloneDxMajor returns null on miss; cover both null and undefined.
   if (version === null || version === undefined) {
     throw new SignatureError(

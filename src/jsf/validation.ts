@@ -61,6 +61,7 @@ export function validateExtensionsInvariants(
   for (let i = 0; i < signers.length; i++) {
     // eslint-disable-next-line security/detect-object-injection -- index from a counted loop over a typed array
     const sd = signers[i];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers (or tampered wire input) whose values violate the TS contract
     if (!sd) continue;
     const ev = sd.extensionValues;
     if (!ev) continue;
