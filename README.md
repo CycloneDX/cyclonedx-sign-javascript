@@ -12,7 +12,7 @@
 Standalone TypeScript implementation of the JSON signing formats used by CycloneDX.
 
 * **JSF** (JSON Signature Format, 0.82) for CycloneDX 1.x.
-* **JSS** (JSON Signature Schema, ITU-T X.590, 10/2023) for CycloneDX 2.x.
+* **JSS** (JSON Signature Scheme, ITU-T X.590, 10/2023) for CycloneDX 2.x.
 * **JCS** (JSON Canonicalization Scheme, RFC 8785) used by both.
 
 One library so tool authors can sign and verify CycloneDX BOMs across specification versions through a single dependency. The top-level `sign` and `verify` are async and accept a `cyclonedxVersion` option (a `CycloneDxMajor` enum value) and route to JSF for 1.x or JSS for 2.x.
@@ -27,7 +27,7 @@ The only runtime dependency outside `node:crypto` is [`@noble/curves`][link_nobl
 | JSS (X.590, 10/2023) | Complete for the named-algorithm subset (RS, PS, ES, Ed). XMSS / LMS out of scope. |
 | JCS (RFC 8785) | Complete. |
 
-Clause-by-clause compliance tables and known errata are documented inside the [JSF](#jsf-json-signature-format-082) and [JSS](#jss-json-signature-schema-x590-102023) sections below.
+Clause-by-clause compliance tables and known errata are documented inside the [JSF](#jsf-json-signature-format-082) and [JSS](#jss-json-signature-scheme-x590-102023) sections below.
 
 ## Install
 
@@ -362,7 +362,7 @@ For CycloneDX signatory and document-level envelopes the asymmetric subset is ex
 | App. C counter signatures via signaturechain | most straightforward construction | Implemented | `appendChainSigner` with verify-first defense (CWE-345 / CWE-347). |
 | App. C counter signatures via multisignature + extensions | peer-based construction | Implemented | `appendMultiSigner` + `extensionValues` per signer for application-specific counter-sign metadata. |
 
-# JSS (JSON Signature Schema, X.590, 10/2023)
+# JSS (JSON Signature Scheme, X.590, 10/2023)
 
 JSS attaches a `signatures` property (default name, plural) carrying a JSON array. Each element is a signaturecore object with `algorithm`, `hash_algorithm`, `value`, plus identification (`public_key`, `public_cert_chain`, `cert_url`, `thumbprint`) and optional metadata (X.590 § 6.3) and optional nested counter signature.
 
