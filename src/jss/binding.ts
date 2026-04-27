@@ -128,7 +128,7 @@ export class JssBinding {
       const v = core[key];
       if (v === undefined) continue;
       // eslint-disable-next-line security/detect-object-injection -- key from Object.keys
-      ext[key] = v as JsonValue;
+      ext[key] = v;
     }
 
     // Counter signature (nested `signature` property).

@@ -93,7 +93,7 @@ export class JsfBinding implements JsfBindingContract {
     mode: 'multi' | 'chain',
   ): JsfEnvelopeView {
     const arrayKey = mode === 'multi' ? 'signers' : 'chain';
-    const arr = obj[arrayKey] as unknown;
+    const arr = obj[arrayKey];
     if (!Array.isArray(arr) || arr.length === 0) {
       throw new JsfEnvelopeError(`${arrayKey} must be a non-empty array`);
     }

@@ -469,10 +469,10 @@ async function verifyOne(
   if (options.verifyCounterSignatures) {
     const counterWire = ext[JSS_COUNTERSIG_KEY];
     if (counterWire && typeof counterWire === 'object' && !Array.isArray(counterWire)) {
-      const counterResult = await verifyCounterOne(
+      const counterResult = verifyCounterOne(
         strippedPayload,
         desc,
-        counterWire as JsonObject,
+        counterWire,
         options,
         signatureProperty,
       );
