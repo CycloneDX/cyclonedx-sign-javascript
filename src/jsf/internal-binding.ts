@@ -40,7 +40,7 @@ export interface JsfSignerKeyInput {
   privateKey?: KeyInput;
   /** Pre-built signer (HSM, KMS, remote). Wins over `privateKey`. */
   signer?: Signer;
-  publicKey?: KeyInput | false | 'auto';
+  publicKey?: KeyInput | false;
   keyId?: string;
   certificatePath?: string[];
   extensionValues?: Record<string, JsonValue>;

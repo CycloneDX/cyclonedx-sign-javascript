@@ -21,7 +21,7 @@ Copyright (c) OWASP Foundation. All Rights Reserved.
  * Public API for the @cyclonedx/sign package.
  *
  * This library implements JSON Signature Format (JSF, 0.82),
- * JSON Signature Schema (JSS, X.590, stub), and the JSON
+ * JSON Signature Scheme (JSS, X.590, stub), and the JSON
  * Canonicalization Scheme (JCS, RFC 8785) used by both, so CycloneDX
  * tool authors can target both CycloneDX 1.x (JSF) and CycloneDX 2.x
  * (JSS) through a single dependency.

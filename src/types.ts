@@ -81,7 +81,7 @@ export type KeyInput = JwkPublicKey | string | Buffer | Uint8Array | KeyObject;
  * major version onto the right JSON signing format:
  *
  *   V1 -> JSF (JSON Signature Format, 0.82)
- *   V2 -> JSS (JSON Signature Schema, X.590)
+ *   V2 -> JSS (JSON Signature Scheme, X.590)
  *
  * Using the CycloneDX major version rather than the underlying format
  * name lets tool authors think in terms of their specification target

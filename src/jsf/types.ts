@@ -58,7 +58,7 @@ export type JsfAlgorithm =
  * values declared by `extensions`.
  */
 export interface JsfSigner {
-  algorithm: JsfAlgorithm | (string & {});
+  algorithm: JsfAlgorithm;
   keyId?: string;
   publicKey?: JwkPublicKey;
   certificatePath?: string[];
@@ -82,12 +82,13 @@ export interface JsfSignerInput {
   signer?: Signer;
   keyId?: string;
   /**
-   * Public-key behaviour for the embedded `publicKey` field.
-   * `'auto'` (default) derives from `privateKey`, `false` omits, an
-   * explicit KeyInput uses that value as the embedded JWK source.
+   * Public-key behaviour for the embedded `publicKey` field. Pass the
+   * sentinel string `'auto'` (default) to derive from `privateKey`,
+   * pass `false` to omit, or pass an explicit KeyInput to use that
+   * value as the embedded JWK source. `'auto'` is a runtime sentinel,
+   * not a separate type constituent (it is already a `string`).
    */
-  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- 'auto' is a documented sentinel string. Keeping the literal in the union aids autocomplete and documents the option.
-  publicKey?: KeyInput | false | 'auto';
+  publicKey?: KeyInput | false;
   certificatePath?: string[];
   /**
    * Per-signer extension property values. Keys must be a subset of
@@ -134,7 +135,7 @@ export interface JsfVerifyOptions {
   /** Property name where the JSF object lives. Default 'signature'. */
   signatureProperty?: string;
   /** Allow-list. Signers whose algorithm is not on the list fail. */
-  allowedAlgorithms?: (JsfAlgorithm | (string & {}))[];
+  allowedAlgorithms?: JsfAlgorithm[];
   /** Reject envelopes whose signers carry no embedded publicKey. */
   requireEmbeddedPublicKey?: boolean;
   /**

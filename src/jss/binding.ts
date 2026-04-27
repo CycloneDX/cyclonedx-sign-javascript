@@ -350,7 +350,7 @@ export function renderSignaturecore(
  */
 export function deriveEmbeddedPublicKeyPemBody(
   privateKeyInput: KeyInput | undefined,
-  publicKeyInput: KeyInput | false | 'auto' | undefined,
+  publicKeyInput: KeyInput | false | undefined,
 ): string | null {
   if (publicKeyInput === false) return null;
   if (publicKeyInput === undefined || publicKeyInput === 'auto') {

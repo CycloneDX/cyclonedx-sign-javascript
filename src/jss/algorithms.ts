@@ -47,10 +47,8 @@ import {
   createHash,
   createPublicKey,
   KeyObject,
-  privateDecrypt,
   privateEncrypt,
   publicDecrypt,
-  publicEncrypt,
   randomBytes,
   sign as nodeSign,
   verify as nodeVerify,
@@ -397,7 +395,11 @@ function rsaModulusBits(key: KeyObject): number {
 // signatures are not malleable in any way that affects the JSS
 // envelope contract, so accepting both forms is interop-correct.
 
-type EcdsaCurve = typeof p256 | typeof p384 | typeof p521;
+// noble's p256 / p384 / p521 share the same TypeScript shape, so a
+// union of the three resolves to a single type. Use one as the
+// representative; the runtime ECDSA_CURVES table still picks the
+// right curve at call time.
+type EcdsaCurve = typeof p256;
 type EcdsaAlgorithm = typeof JssAlgorithms.ES256 | typeof JssAlgorithms.ES384 | typeof JssAlgorithms.ES512;
 
 const ECDSA_CURVES: Record<EcdsaAlgorithm, EcdsaCurve> = {
@@ -578,7 +580,3 @@ function ensureKeyType(key: KeyObject, expectedType: string, algorithm: string):
   }
 }
 
-// keep these imports referenced even though we don't use them, so a future
-// implementation that needs them does not need an additional import edit.
-void privateDecrypt;
-void publicEncrypt;

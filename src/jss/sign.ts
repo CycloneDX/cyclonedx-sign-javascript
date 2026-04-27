@@ -58,7 +58,7 @@ import type {
 } from './types.js';
 import type { VerifyPolicy } from '../core/policy.js';
 import type { JssSignerDescriptor, JssWrapperState } from './internal-types.js';
-import { KeyObject, createPrivateKey, createPublicKey, X509Certificate } from 'node:crypto';
+import { KeyObject, X509Certificate } from 'node:crypto';
 
 const DEFAULT_SIGNATURE_PROPERTY = 'signatures';
 const DEFAULT_HASH_ALGORITHM = 'sha-256';
@@ -346,7 +346,7 @@ export async function verify(
   for (let i = 0; i < view.signers.length; i += 1) {
     // eslint-disable-next-line security/detect-object-injection -- counted loop index
     const desc = view.signers[i]!;
-    const outcome = await verifyOne(stripped, desc, i, options, signatureProperty);
+    const outcome = verifyOne(stripped, desc, i, options, signatureProperty);
     outcomes.push(outcome);
   }
 
@@ -360,13 +360,15 @@ export async function verify(
   return { valid, signers: outcomes, errors: [] };
 }
 
-async function verifyOne(
+// All work below is synchronous; the function previously was `async`
+// to compose with an async verifier closure that no longer exists.
+function verifyOne(
   strippedPayload: JsonObject,
   desc: JssSignerDescriptor,
   index: number,
   options: JssVerifyOptions,
   signatureProperty: string,
-): Promise<JssSignerVerifyResult> {
+): JssSignerVerifyResult {
   const ext = desc.extensionValues ?? {};
   const hashAlgorithm = (ext[JSS_HASH_ALGO_KEY] as string | undefined) ?? DEFAULT_HASH_ALGORITHM;
 
@@ -599,7 +601,7 @@ function verifyCounterOne(
 export function computeCanonicalInputs(
   payload: JsonObject,
   state: {
-    signers: ReadonlyArray<{
+    signers: readonly {
       algorithm: string;
       hash_algorithm?: string;
       keyId?: string;
@@ -611,7 +613,7 @@ export function computeCanonicalInputs(
       // Pre-finalized value, if known. Counter-sign two-phase flows
       // sometimes know prior signer values when computing the next.
       value?: string;
-    }>;
+    }[];
     signatureProperty?: string;
   },
 ): Uint8Array[] {

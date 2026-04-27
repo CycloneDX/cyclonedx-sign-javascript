@@ -37,7 +37,7 @@ export interface JssSignerKeyInput {
   privateKey?: KeyInput;
   /** Pre-built signer (HSM, KMS, remote). Wins over `privateKey`. */
   signer?: Signer;
-  publicKey?: KeyInput | false | 'auto';
+  publicKey?: KeyInput | false;
   extensionValues?: Record<string, JsonValue>;
 }
 

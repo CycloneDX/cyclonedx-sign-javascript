@@ -42,8 +42,8 @@ export type { JssHashAlgorithm } from './hash.js';
  * and round-trip through the binding.
  */
 export interface JssSigner {
-  hash_algorithm: JssHashAlgorithm | (string & {});
-  algorithm: JssAlgorithm | (string & {});
+  hash_algorithm: JssHashAlgorithm;
+  algorithm: JssAlgorithm;
   public_key?: string;
   public_cert_chain?: string[];
   cert_url?: string;
@@ -66,13 +66,14 @@ export interface JssSignerInput {
   privateKey?: KeyInput;
   signer?: Signer;
   /**
-   * Public-key behaviour for the embedded `public_key` field.
-   *   'auto' (default) derives the PEM body from `privateKey`.
-   *   `false` omits.
-   *   An explicit KeyInput uses that value as the embedded source.
+   * Public-key behaviour for the embedded `public_key` field. Pass the
+   * sentinel string `'auto'` (default) to derive the PEM body from
+   * `privateKey`, pass `false` to omit, or pass an explicit KeyInput
+   * to use that value as the embedded source. `'auto'` is a runtime
+   * sentinel, not a separate type constituent (it is already a
+   * `string`).
    */
-  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- 'auto' is a documented sentinel string.
-  public_key?: KeyInput | false | 'auto';
+  public_key?: KeyInput | false;
   public_cert_chain?: string[];
   cert_url?: string;
   thumbprint?: string;
@@ -114,8 +115,8 @@ export interface JssVerifyOptions {
   /** Map signer index -> verifying key. */
   publicKeys?: ReadonlyMap<number, KeyInput>;
   signatureProperty?: string;
-  allowedAlgorithms?: (JssAlgorithm | (string & {}))[];
-  allowedHashAlgorithms?: (JssHashAlgorithm | (string & {}))[];
+  allowedAlgorithms?: JssAlgorithm[];
+  allowedHashAlgorithms?: JssHashAlgorithm[];
   /** Reject envelopes whose signers carry no embedded key material. */
   requireEmbeddedKeyMaterial?: boolean;
   /**
