@@ -23,7 +23,7 @@ The library is self contained. It has no runtime dependencies beyond `node:crypt
 | Format | Status |
 | ------ | ------ |
 | JSF 0.82 | Complete. Verified against the Cyberphone reference test vectors for single, multi-signature, signature-chain, `excludes`, and `extensions`. |
-| JSS (X.590) | Stub. The JSS `sign` and `verify` throw `JssNotImplementedError`. The API surface, types, and routing are in place so tool authors can wire up today and upgrade when the implementation lands. |
+| JSS (ITU-T X.590, 10/2023) | Complete for Ed25519, Ed448, RS256/384/512, PS256/384/512. ES256/384/512 are deferred (pure node:crypto cannot consume a pre-hashed digest for ECDSA; tracked in `docs/specs/jss-implementation-plan.md`). XMSS / LMS quantum-safe options are out of scope for this release. Verified against X.590 worked-example canonical bytes and SHA-256 hashes. |
 | JCS (RFC 8785) | Complete. |
 
 ## Install
@@ -269,15 +269,49 @@ Every sign / verify entry point accepts any of:
 
 For asymmetric algorithms the embedded `publicKey` in the signed envelope is a sanitized JWK limited to the fields the format defines for each key type. Extraneous JWK parameters such as `alg`, `use`, `key_ops`, `kid` are stripped on export.
 
-## JSS (stub)
+## JSS (ITU-T X.590, 10/2023)
 
-The JSS module is wired up end to end at the type and routing level but `sign` and `verify` currently throw `JssNotImplementedError`. Tool authors can import from `@cyclonedx/sign/jss` today, catch the error gracefully, and have their integrations ready for when the underlying implementation lands.
+JSS is the JSON Signature Scheme defined by ITU-T Recommendation X.590. The library implements clauses 6, 7, and 8 (signature object, signing operation, verification operation) and supports Ed25519, Ed448, RSA PKCS#1 v1.5 (RS256/384/512), and RSA-PSS (PS256/384/512). ECDSA (ES256/384/512) is deferred because pure `node:crypto` cannot consume a pre-hashed digest for ECDSA without an external dependency; tracked in `docs/specs/jss-implementation-plan.md`. XMSS and LMS are out of scope for this release.
+
+JSS differs from JSF in several ways:
+
+- The signature property is always a JSON array (default `signatures`, plural).
+- Each signaturecore carries an explicit `hash_algorithm` field.
+- Public keys are PEM bodies (the base64 of DER SPKI, no headers), not JWKs.
+- Counter signing nests a single `signature` property on a signaturecore (linear chain).
+- Multi-signature is independent: each signer signs against a canonical form where ONLY their own signaturecore is in the array.
+- Custom metadata properties (X.590 § 6.3) are allowed and signed.
 
 ```ts
-import { sign, verify, type JssSignOptions } from '@cyclonedx/sign/jss';
+import { sign, verify, countersign } from '@cyclonedx/sign/jss';
+
+// Sign
+const signed = await sign(payload, {
+  signer: {
+    algorithm: 'Ed25519',
+    hash_algorithm: 'sha-256',
+    privateKey: ed25519Pem,
+    public_key: 'auto',                // embed PEM body of the public key
+    metadata: { type: 'jss', signee: 'Alice', created: '2026-04-27T12:00:00Z' },
+  },
+});
+
+// Verify
+const result = await verify(signed);
+result.valid;                // true
+result.signers[0].metadata;  // { type: 'jss', signee: 'Alice', ... }
+
+// Counter sign (X.590 § 7.2). Verifies the existing envelope first
+// (CWE-345 / CWE-347 defense); pass skipVerifyExisting: true to opt out.
+const cs = await countersign(signed, {
+  signer: { algorithm: 'Ed25519', privateKey: notaryPem, public_key: 'auto' },
+});
+const both = await verify(cs, { verifyCounterSignatures: true });
 ```
 
-`JssNotImplementedError` extends `JssError` which extends `SignatureError`. It does NOT extend `JsfError`, so existing JSF focused catch blocks will not silently swallow it.
+### Spec erratum: clauses 7.1.6 and 7.2.6 published signature values
+
+Independently verified during implementation: the published Ed25519 signature values in clauses 7.1.6 (`F1Sj4VcZ...`) and 7.2.6 (`b_7Xu5q...`) do NOT verify against the X.590 Appendix II public key. Ed25519 is deterministic per RFC 8032, so both this library and `coderpatros/dotnet-jss` produce a different, mutually agreeing value. The spec text appears to carry an erratum. The library commits the published values verbatim under `test/fixtures/jss/spec/` and ships an EXPECTED-FAIL verification test so a future spec revision that fixes the erratum is detected automatically.
 
 ## JCS
 

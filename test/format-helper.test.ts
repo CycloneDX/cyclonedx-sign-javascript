@@ -60,14 +60,29 @@ describe('sign and verify', () => {
     expect(result.cyclonedxVersion).toBe(CycloneDxMajor.V1);
   });
 
-  it('routes to the JSS stub when cyclonedxVersion is V2', async () => {
+  it('routes to JSS (V2) and signs with an Ed25519 key', async () => {
+    const ed = generateKeyPairSync('ed25519') as unknown as { privateKey: KeyObject; publicKey: KeyObject };
+    const signed = await sign(
+      { hello: 'world' },
+      {
+        cyclonedxVersion: CycloneDxMajor.V2,
+        signer: { algorithm: 'Ed25519', privateKey: ed.privateKey, public_key: 'auto' },
+      },
+    );
+    expect(Array.isArray(signed.signatures)).toBe(true);
+    const result = await verify(signed, { cyclonedxVersion: CycloneDxMajor.V2 });
+    expect(result.valid).toBe(true);
+    expect(result.cyclonedxVersion).toBe(CycloneDxMajor.V2);
+  });
+
+  it('JSS V2 still throws JssNotImplementedError for the deferred ECDSA family', async () => {
     const { privateKey } = ecPair();
     await expect(
       sign(
         { hello: 'world' },
         {
           cyclonedxVersion: CycloneDxMajor.V2,
-          signer: { algorithm: 'ES256', privateKey },
+          signer: { algorithm: 'ES256', privateKey, public_key: 'auto' },
         },
       ),
     ).rejects.toThrow(JssNotImplementedError);
@@ -166,21 +181,28 @@ describe('format detection and conversion helpers', () => {
   });
 });
 
-describe('JSS stub surface', () => {
-  it('JSS sign throws JssNotImplementedError', async () => {
+describe('JSS subpath surface', () => {
+  it('JSS sign + verify round-trip via the subpath import', async () => {
+    const ed = generateKeyPairSync('ed25519') as unknown as { privateKey: KeyObject; publicKey: KeyObject };
+    const signed = await signJss({ a: 1 }, {
+      signer: { algorithm: 'Ed25519', privateKey: ed.privateKey, public_key: 'auto' },
+    });
+    expect(Array.isArray(signed.signatures)).toBe(true);
+    const r = await verifyJss(signed);
+    expect(r.valid).toBe(true);
+  });
+
+  it('ECDSA family still throws JssNotImplementedError', async () => {
     const { privateKey } = ecPair();
     await expect(
-      signJss({ a: 1 }, { signer: { algorithm: 'ES256', privateKey } }),
+      signJss({ a: 1 }, { signer: { algorithm: 'ES256', privateKey, public_key: 'auto' } }),
     ).rejects.toThrow(JssNotImplementedError);
   });
 
-  it('JSS verify throws JssNotImplementedError', async () => {
-    await expect(verifyJss({ a: 1 }, {})).rejects.toThrow(JssNotImplementedError);
-  });
-
-  it('JssNotImplementedError is a SignatureError', async () => {
+  it('JssNotImplementedError remains a SignatureError and is not a JsfError', async () => {
+    const { privateKey } = ecPair();
     try {
-      await signJss({}, { signer: { algorithm: 'ES256', privateKey: '' } });
+      await signJss({ a: 1 }, { signer: { algorithm: 'ES256', privateKey, public_key: 'auto' } });
     } catch (err) {
       expect(err).toBeInstanceOf(SignatureError);
       expect(err).toBeInstanceOf(JssNotImplementedError);

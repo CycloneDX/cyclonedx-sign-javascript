@@ -113,11 +113,6 @@ export function detectFormat(
   }
   const slot = candidate as Record<string, unknown>;
 
-  // JSS detection placeholder.
-  if (typeof slot.format === 'string' && slot.format.toLowerCase() === 'jss') {
-    return 'jss';
-  }
-
   // JSF: bare signaturecore.
   if (typeof slot.algorithm === 'string' && typeof slot.value === 'string') {
     return 'jsf';
@@ -131,6 +126,29 @@ export function detectFormat(
   return null;
 }
 
+/**
+ * JSS uses a JSON array under the signature property (default
+ * `signatures`, plural). We detect on the array shape with at least
+ * one element carrying `algorithm` + `hash_algorithm` + `value`.
+ *
+ * Detection runs separately from `detectFormat` because JSS uses a
+ * different default signature property name. Callers can pass
+ * `signatureProperty: 'signatures'` to detectFormat() to find a JSS
+ * envelope at the standard location.
+ */
+function detectJss(payload: JsonObject, signatureProperty: string): boolean {
+  // eslint-disable-next-line security/detect-object-injection -- caller-controlled or default
+  const slot = payload[signatureProperty];
+  if (!Array.isArray(slot) || slot.length === 0) return false;
+  const first = slot[0] as Record<string, unknown> | undefined;
+  if (!first || typeof first !== 'object' || Array.isArray(first)) return false;
+  return (
+    typeof first.algorithm === 'string' &&
+    typeof first.hash_algorithm === 'string' &&
+    typeof first.value === 'string'
+  );
+}
+
 export function cyclonedxFormat(version: CycloneDxMajor): SignatureFormat {
   return version === CycloneDxMajor.V2 ? 'jss' : 'jsf';
 }
@@ -139,7 +157,14 @@ function detectCycloneDxMajor(
   subject: JsonObject,
   signatureProperty: string | undefined,
 ): CycloneDxMajor | null {
-  const detected = detectFormat(subject, signatureProperty);
+  const prop = signatureProperty ?? DEFAULT_SIGNATURE_PROPERTY;
+  // JSS shape (array under `signatures` by default) wins ahead of
+  // generic JSF detection because the structures are mutually
+  // exclusive (JSF wrappers carry `signers`/`chain` properties; JSS
+  // uses an array directly).
+  if (detectJss(subject, 'signatures')) return CycloneDxMajor.V2;
+  if (detectJss(subject, prop)) return CycloneDxMajor.V2;
+  const detected = detectFormat(subject, prop);
   if (detected === 'jss') return CycloneDxMajor.V2;
   if (detected === 'jsf') return CycloneDxMajor.V1;
   return null;

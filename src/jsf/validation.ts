@@ -1,10 +1,5 @@
 /**
- * Format-agnostic envelope and signer validation.
- *
- * These checks come straight from JSF 0.82 § 5 and § 6 and are
- * re-usable for any binding that adopts the JSF reservation list
- * (X.590 may or may not; if it does not, the JSS binding can simply
- * not call these helpers).
+ * JSF envelope and signer validation (JSF 0.82 § 5 and § 6).
  *
  * Two groups:
  *
@@ -18,36 +13,28 @@
  *      properties inside any signaturecore, and no undeclared
  *      properties on the wrapper. JSF § 6: "Note that there must not
  *      be any not here defined properties inside of the signature
- *      object". This is normative verifier behavior; the library
- *      always runs it.
+ *      object". Normative verifier behavior; the library always runs
+ *      it.
  */
 
 import type {
-  EnvelopeOptions,
-  SignerDescriptor,
-  WrapperState,
-} from './types.js';
+  JsfEnvelopeOptions,
+  JsfSignerDescriptor,
+  JsfWrapperState,
+} from './internal-types.js';
 import {
   isJsfReservedWord,
   isJsfSignatureCoreField,
   JSF_RESERVED_WORDS,
   JSF_WRAPPER_FIELDS_CHAIN,
   JSF_WRAPPER_FIELDS_MULTI,
-} from './jsf-reserved.js';
+} from './reserved.js';
 
 const RESERVED_LIST = JSF_RESERVED_WORDS.join(', ');
 
-/**
- * Validate the union of `extensions` plus every signer's
- * `extensionValues`. Throws via the supplied factory on the first
- * problem.
- *
- * Run at sign time before any cryptographic work, and at verify time
- * before any cryptographic work too.
- */
 export function validateExtensionsInvariants(
-  options: EnvelopeOptions,
-  signers: readonly SignerDescriptor[],
+  options: JsfEnvelopeOptions,
+  signers: readonly JsfSignerDescriptor[],
   raise: (message: string) => never,
 ): void {
   const declared = options.extensions;
@@ -92,10 +79,6 @@ export function validateExtensionsInvariants(
   }
 }
 
-/**
- * Validate `excludes` is a well-formed array. Always-on; JSF treats
- * malformed `excludes` as a structural error.
- */
 export function validateExcludesShape(
   excludes: readonly string[] | undefined,
   raise: (message: string) => never,
@@ -113,17 +96,15 @@ export function validateExcludesShape(
 
 /**
  * Verifier-side acceptance allowlist for the envelope's `excludes`
- * list. Per JSF § 5: "a conforming JSF implementation must provide
- * options for specifying which properties to accept".
- *
- * Returns null when accepted, or a descriptive error string when
- * rejected.
+ * list (JSF § 5: "must provide options for specifying which
+ * properties to accept"). Returns null when accepted, or a
+ * descriptive error string when rejected.
  */
 export function checkAllowedExcludes(
   excludes: readonly string[] | undefined,
   allowed: readonly string[] | undefined,
 ): string | null {
-  if (!allowed) return null; // lenient default
+  if (!allowed) return null;
   if (!excludes || excludes.length === 0) return null;
   const allowedSet = new Set<string>(allowed);
   for (const name of excludes) {
@@ -136,8 +117,8 @@ export function checkAllowedExcludes(
 
 /**
  * Verifier-side acceptance allowlist for the envelope's `extensions`
- * list. Per JSF § 5: "an option to only accept predefined extension
- * property names".
+ * list (JSF § 5: "an option to only accept predefined extension
+ * property names").
  */
 export function checkAllowedExtensions(
   extensions: readonly string[] | undefined,
@@ -154,17 +135,6 @@ export function checkAllowedExtensions(
   return null;
 }
 
-/**
- * Reject any property on the JSF wrapper (multi or chain) that is not
- * defined by JSF § 5. The wrapper may carry exactly the array
- * property (`signers` or `chain`) and the two Global Signature
- * Options (`excludes`, `extensions`). JSF § 6: "there must not be
- * any not here defined properties inside of the signature object" —
- * this is mandatory verifier behavior, not an opt-in.
- *
- * Returns one error string per offending property; empty array means
- * accepted.
- */
 export function checkWrapperProperties(
   wrapper: Record<string, unknown>,
   arrayKey: 'signers' | 'chain',
@@ -182,17 +152,6 @@ export function checkWrapperProperties(
   return errors;
 }
 
-/**
- * Reject any property on a signaturecore that is not defined by JSF
- * § 5: the fixed fields (algorithm, value, keyId, publicKey,
- * certificatePath) plus the application-specific extension names
- * declared by the envelope's `extensions` list.
- *
- * In single mode the signaturecore IS the JSF signature object, so
- * `excludes` and `extensions` are also legitimate at that level. In
- * multi/chain those Global Signature Options live on the wrapper, not
- * on the inner signaturecore.
- */
 export function checkSignatureCoreProperties(
   core: Record<string, unknown>,
   declaredExtensions: readonly string[] | undefined,
@@ -218,19 +177,15 @@ export function checkSignatureCoreProperties(
       );
     } else if (!isJsfSignatureCoreField(key) && key !== 'excludes' && key !== 'extensions') {
       // Declared extension property; allowed because of the
-      // envelope's `extensions` list. No action needed.
+      // envelope's `extensions` list.
     }
   }
   return errors;
 }
 
-/**
- * Throw-helper to keep a uniform error type at the call site.
- */
 export type StateRaiser = (message: string) => never;
 
-/** Convenience: validate a complete `WrapperState` at sign time. */
-export function validateStateAtSign(state: WrapperState, raise: StateRaiser): void {
+export function validateStateAtSign(state: JsfWrapperState, raise: StateRaiser): void {
   validateExcludesShape(state.options.excludes, raise);
   validateExtensionsInvariants(state.options, state.signers, raise);
   if (state.signers.length === 0) {

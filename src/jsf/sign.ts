@@ -4,7 +4,7 @@
  * The thin layer over `core/` that:
  *
  *   - normalizes the unified `JsfSignOptions` into a list of signer
- *     inputs and an `EnvelopeMode`,
+ *     inputs and an `JsfEnvelopeMode`,
  *   - calls `signEnvelope` / `verifyEnvelope` with the JSF binding,
  *   - maps the format-agnostic result into `JsfVerifyResult`.
  *
@@ -17,15 +17,15 @@ import {
   appendDescriptor,
   signEnvelope,
   verifyEnvelope,
-} from '../core/orchestrator.js';
+} from "./orchestrate.js";
 import type {
-  EnvelopeMode,
-  EnvelopeOptions,
-  SignerDescriptor,
-  WrapperState,
-} from '../core/types.js';
-import type { SignerKeyInput, VerifierKeyInput } from '../core/binding.js';
-import { isJsfReservedWord } from '../core/jsf-reserved.js';
+  JsfEnvelopeMode,
+  JsfEnvelopeOptions,
+  JsfSignerDescriptor,
+  JsfWrapperState,
+} from "./internal-types.js";
+import type { JsfSignerKeyInput, JsfVerifierKeyInput } from "./internal-binding.js";
+import { isJsfReservedWord } from "./reserved.js";
 import { JSF_BINDING } from './binding.js';
 import {
   JsfChainOrderError,
@@ -66,11 +66,11 @@ export async function sign(payload: JsonObject, options: JsfSignOptions): Promis
     ? [...options.extensions]
     : unionExtensionKeys(signers);
 
-  const envelopeOptions: EnvelopeOptions = {};
+  const envelopeOptions: JsfEnvelopeOptions = {};
   if (options.excludes !== undefined) envelopeOptions.excludes = [...options.excludes];
   if (extensions.length > 0) envelopeOptions.extensions = extensions;
 
-  const inputs: SignerKeyInput[] = signers.map((s) => signerInputToCore(s));
+  const inputs: JsfSignerKeyInput[] = signers.map((s) => signerInputToCore(s));
 
   return signEnvelope({
     payload,
@@ -106,7 +106,7 @@ export async function verify(
     payload,
     binding: JSF_BINDING,
     signatureProperty,
-    publicKeys: publicKeys as ReadonlyMap<number, VerifierKeyInput['publicKey']> | undefined,
+    publicKeys: publicKeys as ReadonlyMap<number, JsfVerifierKeyInput['publicKey']> | undefined,
     allowedAlgorithms: options.allowedAlgorithms,
     requireEmbeddedPublicKey: options.requireEmbeddedPublicKey,
     policy: options.policy,
@@ -184,8 +184,8 @@ async function appendInternal(
 
   validateAppendExtensions(signer, view.options.extensions);
 
-  const newDescriptor: SignerDescriptor = signerInputToDescriptor(signer);
-  const baseState: WrapperState = {
+  const newDescriptor: JsfSignerDescriptor = signerInputToDescriptor(signer);
+  const baseState: JsfWrapperState = {
     mode: view.mode,
     options: view.options,
     signers: view.signers,
@@ -234,7 +234,7 @@ async function appendInternal(
 
   // Strip the value off the to-be-signed descriptor so the canonical
   // view matches what other implementations would produce.
-  const stateForSign: WrapperState = {
+  const stateForSign: JsfWrapperState = {
     ...extended,
     finalized: extended.finalized.map((f, i) => (i === newIndex ? false : f)),
   };
@@ -299,12 +299,12 @@ export function computeCanonicalInputs(
   if (state.finalized.length !== state.signers.length) {
     throw new JsfInputError('state.finalized.length must equal state.signers.length');
   }
-  const descriptors: SignerDescriptor[] = state.signers.map((s) => {
+  const descriptors: JsfSignerDescriptor[] = state.signers.map((s) => {
     const obj = s as unknown as Record<string, unknown>;
-    const d: SignerDescriptor = { algorithm: String(obj.algorithm) };
+    const d: JsfSignerDescriptor = { algorithm: String(obj.algorithm) };
     if (typeof obj.keyId === 'string') d.keyId = obj.keyId;
     if (obj.publicKey && typeof obj.publicKey === 'object' && !Array.isArray(obj.publicKey)) {
-      d.publicKey = obj.publicKey as unknown as SignerDescriptor['publicKey'];
+      d.publicKey = obj.publicKey as unknown as JsfSignerDescriptor['publicKey'];
     }
     if (Array.isArray(obj.certificatePath)) {
       d.certificatePath = (obj.certificatePath as unknown[]).map(String);
@@ -324,7 +324,7 @@ export function computeCanonicalInputs(
       if (typeof v === 'string') descriptors[i]!.value = v;
     }
   }
-  const wrap: WrapperState = {
+  const wrap: JsfWrapperState = {
     mode: state.mode,
     options: {
       ...(state.excludes !== undefined ? { excludes: [...state.excludes] } : {}),
@@ -387,7 +387,7 @@ function collectSigners(options: JsfSignOptions): JsfSignerInput[] {
   return options.signers;
 }
 
-function inferMode(count: number, mode: 'multi' | 'chain' | undefined): EnvelopeMode {
+function inferMode(count: number, mode: 'multi' | 'chain' | undefined): JsfEnvelopeMode {
   // Length 1, no explicit mode -> bare signaturecore (single mode).
   // Length 1 with mode='multi' or 'chain' -> emit a length-1 wrapper so
   // that later appendMultiSigner / appendChainSigner can grow the
@@ -412,8 +412,8 @@ function unionExtensionKeys(signers: readonly JsfSignerInput[]): string[] {
   return Array.from(set);
 }
 
-function signerInputToCore(s: JsfSignerInput): SignerKeyInput {
-  const out: SignerKeyInput = { algorithm: s.algorithm };
+function signerInputToCore(s: JsfSignerInput): JsfSignerKeyInput {
+  const out: JsfSignerKeyInput = { algorithm: s.algorithm };
   if (s.privateKey !== undefined) out.privateKey = s.privateKey;
   if (s.signer !== undefined) out.signer = s.signer;
   if (s.publicKey !== undefined) out.publicKey = s.publicKey;
@@ -423,8 +423,8 @@ function signerInputToCore(s: JsfSignerInput): SignerKeyInput {
   return out;
 }
 
-function signerInputToDescriptor(s: JsfSignerInput): SignerDescriptor {
-  const d: SignerDescriptor = { algorithm: s.algorithm };
+function signerInputToDescriptor(s: JsfSignerInput): JsfSignerDescriptor {
+  const d: JsfSignerDescriptor = { algorithm: s.algorithm };
   if (s.keyId !== undefined) d.keyId = s.keyId;
   if (s.certificatePath !== undefined) d.certificatePath = [...s.certificatePath];
   if (s.extensionValues !== undefined) d.extensionValues = { ...s.extensionValues };

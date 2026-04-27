@@ -1,0 +1,1 @@
+{"otherProperties":["home","food"],"signatures":[{"algorithm":"Ed25519","hash_algorithm":"sha-256","public_key":"MCowBQYDK2VwAyEAubMonBfU9pvIbj5RCiWQLD45Jvu6mKr+kQXjvjW8ZkU"}],"statement":"Hello signed world!"}

@@ -1,7 +1,7 @@
 /**
  * JSF format binding.
  *
- * Implements the format-agnostic `FormatBinding` interface for JSF
+ * Implements the format-agnostic `JsfBindingContract` interface for JSF
  * 0.82. Owns:
  *
  *   - mapping `EnvelopeMode` to the JSF wire shapes:
@@ -11,25 +11,24 @@
  *   - per-signer canonical view per JSF §§ 8 / 9, with the
  *     bracket-and-comma rules expressed by including the right
  *     elements in the array before handing to JCS,
- *   - signaturecore <-> SignerDescriptor mapping including the
+ *   - signaturecore <-> JsfSignerDescriptor mapping including the
  *     spread/collect of extension property values,
  *   - building node-crypto-backed `Signer` / `Verifier` primitives
  *     from key inputs.
  */
 
 import type {
-  FormatBinding,
-  SignerKeyInput,
-  VerifierKeyInput,
-} from '../core/binding.js';
+  JsfBindingContract,
+  JsfSignerKeyInput,
+  JsfVerifierKeyInput,
+} from './internal-binding.js';
 import type {
-  EnvelopeOptions,
-  EnvelopeView,
-  Signer,
-  SignerDescriptor,
-  Verifier,
-  WrapperState,
-} from '../core/types.js';
+  JsfEnvelopeOptions,
+  JsfEnvelopeView,
+  JsfSignerDescriptor,
+  JsfWrapperState,
+} from './internal-types.js';
+import type { Signer, Verifier } from '../core/signer.js';
 import type {
   JsonObject,
   JsonValue,
@@ -51,7 +50,7 @@ import { JsfEnvelopeError, JsfInputError } from '../errors.js';
 import {
   isJsfReservedWord,
   isJsfSignatureCoreField,
-} from '../core/jsf-reserved.js';
+} from './reserved.js';
 
 const FIXED_CORE_FIELDS = new Set([
   'algorithm',
@@ -62,12 +61,12 @@ const FIXED_CORE_FIELDS = new Set([
 ]);
 
 /** The single, frozen JSF binding instance. */
-export class JsfBinding implements FormatBinding {
+export class JsfBinding implements JsfBindingContract {
   readonly format: SignatureFormat = 'jsf';
 
   // -- detect -----------------------------------------------------------------
 
-  detect(payload: JsonObject, signatureProperty: string): EnvelopeView | null {
+  detect(payload: JsonObject, signatureProperty: string): JsfEnvelopeView | null {
     // eslint-disable-next-line security/detect-object-injection -- caller-controlled, defaults to "signature"
     const slot = payload[signatureProperty];
     if (slot === undefined) return null;
@@ -92,7 +91,7 @@ export class JsfBinding implements FormatBinding {
   private viewFromWrapper(
     obj: Record<string, unknown>,
     mode: 'multi' | 'chain',
-  ): EnvelopeView {
+  ): JsfEnvelopeView {
     const arrayKey = mode === 'multi' ? 'signers' : 'chain';
     const arr = obj[arrayKey] as unknown;
     if (!Array.isArray(arr) || arr.length === 0) {
@@ -100,11 +99,11 @@ export class JsfBinding implements FormatBinding {
     }
     // Read wrapper-level options first so descriptorFromWire knows
     // which keys count as declared extension properties.
-    const options: EnvelopeOptions = {};
+    const options: JsfEnvelopeOptions = {};
     if (Array.isArray(obj.excludes)) options.excludes = [...(obj.excludes as string[])];
     if (Array.isArray(obj.extensions))
       options.extensions = [...(obj.extensions as string[])];
-    const signers: SignerDescriptor[] = arr.map((el, i) => {
+    const signers: JsfSignerDescriptor[] = arr.map((el, i) => {
       if (!el || typeof el !== 'object' || Array.isArray(el)) {
         throw new JsfEnvelopeError(`${arrayKey}[${i}] must be a signer object`);
       }
@@ -113,11 +112,11 @@ export class JsfBinding implements FormatBinding {
     return { mode, options, signers };
   }
 
-  private viewFromBareCore(obj: Record<string, unknown>): EnvelopeView {
+  private viewFromBareCore(obj: Record<string, unknown>): JsfEnvelopeView {
     if (typeof obj.algorithm !== 'string' || obj.algorithm.length === 0) {
       throw new JsfEnvelopeError('signer is missing algorithm');
     }
-    const options: EnvelopeOptions = {};
+    const options: JsfEnvelopeOptions = {};
     if (Array.isArray(obj.excludes)) options.excludes = [...(obj.excludes as string[])];
     if (Array.isArray(obj.extensions))
       options.extensions = [...(obj.extensions as string[])];
@@ -127,11 +126,11 @@ export class JsfBinding implements FormatBinding {
 
   // -- descriptor (de)serialization ------------------------------------------
 
-  descriptorFromWire(core: JsonObject, options: EnvelopeOptions): SignerDescriptor {
+  descriptorFromWire(core: JsonObject, options: JsfEnvelopeOptions): JsfSignerDescriptor {
     if (typeof core.algorithm !== 'string' || core.algorithm.length === 0) {
       throw new JsfEnvelopeError('signer is missing algorithm');
     }
-    const desc: SignerDescriptor = { algorithm: core.algorithm };
+    const desc: JsfSignerDescriptor = { algorithm: core.algorithm };
     if (typeof core.keyId === 'string') desc.keyId = core.keyId;
     if (core.publicKey && typeof core.publicKey === 'object' && !Array.isArray(core.publicKey)) {
       desc.publicKey = core.publicKey as unknown as JwkPublicKey;
@@ -173,7 +172,7 @@ export class JsfBinding implements FormatBinding {
 
   buildCanonicalView(
     payload: JsonObject,
-    state: WrapperState,
+    state: JsfWrapperState,
     index: number,
     signatureProperty: string,
   ): JsonObject {
@@ -238,7 +237,7 @@ export class JsfBinding implements FormatBinding {
 
   // -- emit ------------------------------------------------------------------
 
-  emit(payload: JsonObject, state: WrapperState, signatureProperty: string): JsonObject {
+  emit(payload: JsonObject, state: JsfWrapperState, signatureProperty: string): JsonObject {
     if (signatureProperty in payload) {
       throw new JsfInputError(
         `Payload already has a "${signatureProperty}" property; refusing to overwrite`,
@@ -269,7 +268,7 @@ export class JsfBinding implements FormatBinding {
 
   // -- key plumbing ----------------------------------------------------------
 
-  toSigner(input: SignerKeyInput): Signer {
+  toSigner(input: JsfSignerKeyInput): Signer {
     if (input.signer) return input.signer;
     if (!input.privateKey) {
       throw new JsfInputError('Either privateKey or a Signer must be provided');
@@ -284,7 +283,7 @@ export class JsfBinding implements FormatBinding {
     };
   }
 
-  toVerifier(input: VerifierKeyInput): Verifier {
+  toVerifier(input: JsfVerifierKeyInput): Verifier {
     if (!isRegisteredAlgorithm(input.algorithm)) {
       throw new JsfInputError(`Unsupported algorithm: ${input.algorithm}`);
     }
@@ -302,7 +301,7 @@ export class JsfBinding implements FormatBinding {
     };
   }
 
-  resolveEmbeddedPublicKey(input: SignerKeyInput): JwkPublicKey | null {
+  resolveEmbeddedPublicKey(input: JsfSignerKeyInput): JwkPublicKey | null {
     if (!isRegisteredAlgorithm(input.algorithm)) return null;
     const spec = getAlgorithmSpec(input.algorithm);
     if (spec.family === 'hmac') {
@@ -324,7 +323,7 @@ export const JSF_BINDING = new JsfBinding();
 // -- Helpers -----------------------------------------------------------------
 
 function renderSignaturecore(
-  d: SignerDescriptor,
+  d: JsfSignerDescriptor,
   opts: { stripValue: boolean },
 ): JsonObject {
   const core: JsonObject = { algorithm: d.algorithm };

@@ -1,30 +1,30 @@
 /**
- * Format-agnostic sign and verify orchestration.
+ * JSF sign and verify orchestration.
  *
- * This module knows nothing about JSF or JSS. It iterates the signer
- * array, asks the binding to build the per-signer canonical view,
- * canonicalizes via JCS, and dispatches to the binding-supplied
- * `Signer` / `Verifier` primitives. JSF-specific behaviour (the wrapper
- * shape, the bracket-and-comma rules of JSF §§ 8 / 9, the signaturecore
- * encoding) lives in the binding's `buildCanonicalView` and `emit`.
- *
+ * This module iterates the signer array, asks the binding to build
+ * the per-signer canonical view, canonicalizes via JCS, and dispatches
+ * to async `Signer` / `Verifier` primitives produced by the binding.
  * The orchestrator is async because remote signers (HSM, KMS) are
- * async. The default in-process node-crypto signer resolves on the
- * same tick so synchronous sign/verify work without any extra cost.
+ * async; the in-process node-crypto path resolves on the same tick.
  */
 
 import { canonicalize } from '../jcs.js';
 import { decodeBase64Url, encodeBase64Url } from '../base64url.js';
+import { applyPolicy } from '../core/policy.js';
+import type { VerifyPolicy } from '../core/policy.js';
 import type { JsonObject, JsonValue } from '../types.js';
 import type {
-  EnvelopeMode,
-  EnvelopeOptions,
-  SignerDescriptor,
-  SignerVerifyOutcome,
-  VerifyPolicy,
-  WrapperState,
-} from './types.js';
-import type { FormatBinding, SignerKeyInput, VerifierKeyInput } from './binding.js';
+  JsfEnvelopeMode,
+  JsfEnvelopeOptions,
+  JsfSignerDescriptor,
+  JsfSignerVerifyOutcome,
+  JsfWrapperState,
+} from './internal-types.js';
+import type {
+  JsfBindingContract,
+  JsfSignerKeyInput,
+  JsfVerifierKeyInput,
+} from './internal-binding.js';
 import {
   checkAllowedExcludes,
   checkAllowedExtensions,
@@ -35,37 +35,23 @@ import {
   validateStateAtSign,
 } from './validation.js';
 
-// -- Sign ---------------------------------------------------------------------
+// -- Sign --------------------------------------------------------------------
 
-export interface OrchestratorSignInput {
+export interface JsfOrchestratorSignInput {
   payload: JsonObject;
-  inputs: SignerKeyInput[];
-  mode: EnvelopeMode;
-  options: EnvelopeOptions;
-  binding: FormatBinding;
+  inputs: JsfSignerKeyInput[];
+  mode: JsfEnvelopeMode;
+  options: JsfEnvelopeOptions;
+  binding: JsfBindingContract;
   signatureProperty: string;
-  /**
-   * When provided, used to construct the SignerInputError. Lets the
-   * format-specific layer keep its own error class.
-   */
   raiseInput: (message: string) => never;
 }
 
-/**
- * Build, sign, and emit an envelope.
- *
- * The caller's payload is never mutated. The output is a fresh object
- * with the signature property set.
- */
-export async function signEnvelope(input: OrchestratorSignInput): Promise<JsonObject> {
+export async function signEnvelope(input: JsfOrchestratorSignInput): Promise<JsonObject> {
   const { payload, inputs, mode, options, binding, signatureProperty, raiseInput } = input;
 
-  // Convert SignerKeyInput[] into descriptors (without `value`) plus
-  // the matching async Signer primitives. The binding owns the
-  // mapping because resolveEmbeddedPublicKey and toSigner are
-  // format-aware.
-  const descriptors: SignerDescriptor[] = inputs.map((ski) => {
-    const desc: SignerDescriptor = { algorithm: ski.algorithm };
+  const descriptors: JsfSignerDescriptor[] = inputs.map((ski) => {
+    const desc: JsfSignerDescriptor = { algorithm: ski.algorithm };
     if (ski.keyId !== undefined) desc.keyId = ski.keyId;
     if (ski.certificatePath !== undefined) desc.certificatePath = [...ski.certificatePath];
     if (ski.extensionValues !== undefined) {
@@ -76,7 +62,7 @@ export async function signEnvelope(input: OrchestratorSignInput): Promise<JsonOb
     return desc;
   });
 
-  const state: WrapperState = {
+  const state: JsfWrapperState = {
     mode,
     options,
     signers: descriptors,
@@ -90,24 +76,24 @@ export async function signEnvelope(input: OrchestratorSignInput): Promise<JsonOb
   for (let i = 0; i < state.signers.length; i++) {
     const view = binding.buildCanonicalView(payload, state, i, signatureProperty);
     const bytes = canonicalize(view);
-    // eslint-disable-next-line security/detect-object-injection -- index from a counted loop over a typed array
+    // eslint-disable-next-line security/detect-object-injection -- counted loop
     const sig = await signers[i]!.sign(bytes);
-    // eslint-disable-next-line security/detect-object-injection -- index from a counted loop
+    // eslint-disable-next-line security/detect-object-injection -- counted loop
     state.signers[i]!.value = encodeBase64Url(sig);
-    // eslint-disable-next-line security/detect-object-injection -- index from a counted loop
+    // eslint-disable-next-line security/detect-object-injection -- counted loop
     state.finalized[i] = true;
   }
 
   return binding.emit(payload, state, signatureProperty);
 }
 
-// -- Verify -------------------------------------------------------------------
+// -- Verify ------------------------------------------------------------------
 
-export interface OrchestratorVerifyInput {
+export interface JsfOrchestratorVerifyInput {
   payload: JsonObject;
-  binding: FormatBinding;
+  binding: JsfBindingContract;
   signatureProperty: string;
-  publicKeys?: ReadonlyMap<number, VerifierKeyInput['publicKey']>;
+  publicKeys?: ReadonlyMap<number, JsfVerifierKeyInput['publicKey']>;
   allowedAlgorithms?: readonly string[];
   requireEmbeddedPublicKey?: boolean;
   policy?: VerifyPolicy;
@@ -115,32 +101,22 @@ export interface OrchestratorVerifyInput {
   allowedExtensions?: readonly string[];
   raiseEnvelope: (message: string) => never;
   raiseVerify: (message: string) => never;
-  /**
-   * Format-specific raw-wrapper accessor for the JSF § 6 property
-   * check. Returns the wrapper object as it appeared on the wire, or
-   * null when the wire shape does not have a wrapper (single mode).
-   */
   rawWrapper: () => Record<string, unknown> | null;
-  /**
-   * Format-specific raw signaturecore array accessor for the JSF § 6
-   * property check. Returns the on-the-wire array of signaturecore
-   * objects (length 1 for single mode).
-   */
   rawSignatureCores: () => Record<string, unknown>[];
 }
 
-export interface OrchestratorVerifyResult {
+export interface JsfOrchestratorVerifyResult {
   valid: boolean;
-  mode: EnvelopeMode;
-  signers: SignerVerifyOutcome[];
+  mode: JsfEnvelopeMode;
+  signers: JsfSignerVerifyOutcome[];
   excludes?: string[];
   extensions?: string[];
   envelopeErrors: string[];
 }
 
 export async function verifyEnvelope(
-  input: OrchestratorVerifyInput,
-): Promise<OrchestratorVerifyResult> {
+  input: JsfOrchestratorVerifyInput,
+): Promise<JsfOrchestratorVerifyResult> {
   const {
     payload,
     binding,
@@ -161,10 +137,9 @@ export async function verifyEnvelope(
   if (view === null) {
     raiseEnvelope(`Payload has no "${signatureProperty}" property`);
   }
-  // raiseEnvelope is typed as `(m) => never` so TS knows view is non-null below.
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- raiseEnvelope above never returns; satisfy strict null check.
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- raiseEnvelope above never returns
   const v = view!;
-  const state: WrapperState = {
+  const state: JsfWrapperState = {
     mode: v.mode,
     options: v.options,
     signers: v.signers,
@@ -173,8 +148,6 @@ export async function verifyEnvelope(
 
   const envelopeErrors: string[] = [];
 
-  // Always-on shape checks. JSF says "must" so structural failures here
-  // are envelope-level errors that cause valid:false regardless of policy.
   try {
     validateExcludesShape(state.options.excludes, (m) => {
       throw new Error(m);
@@ -186,15 +159,11 @@ export async function verifyEnvelope(
     envelopeErrors.push((e as Error).message);
   }
 
-  // Verifier-side acceptance allowlists.
   const exclErr = checkAllowedExcludes(state.options.excludes, allowedExcludes);
   if (exclErr) envelopeErrors.push(exclErr);
   const extErr = checkAllowedExtensions(state.options.extensions, allowedExtensions);
   if (extErr) envelopeErrors.push(extErr);
 
-  // JSF § 6: "there must not be any not here defined properties
-  // inside of the signature object". Always enforced; this is a
-  // normative validator rule, not an opt-in.
   if (state.mode !== 'single') {
     const w = rawWrapper();
     if (w) {
@@ -204,7 +173,7 @@ export async function verifyEnvelope(
   }
   const cores = rawSignatureCores();
   for (let i = 0; i < cores.length; i++) {
-    // eslint-disable-next-line security/detect-object-injection -- index from a counted loop
+    // eslint-disable-next-line security/detect-object-injection -- counted loop
     const core = cores[i];
     if (!core) continue;
     envelopeErrors.push(
@@ -217,14 +186,11 @@ export async function verifyEnvelope(
     );
   }
 
-  // Per-signer cryptographic verification. Even when envelopeErrors
-  // already disqualifies the envelope we still run per-signer checks
-  // and report results so callers can introspect.
-  const outcomes: SignerVerifyOutcome[] = [];
+  const outcomes: JsfSignerVerifyOutcome[] = [];
   for (let i = 0; i < state.signers.length; i++) {
-    // eslint-disable-next-line security/detect-object-injection -- index from a counted loop
+    // eslint-disable-next-line security/detect-object-injection -- counted loop
     const desc = state.signers[i]!;
-    const outcome: SignerVerifyOutcome = {
+    const outcome: JsfSignerVerifyOutcome = {
       index: i,
       valid: false,
       algorithm: desc.algorithm,
@@ -247,7 +213,6 @@ export async function verifyEnvelope(
       outcomes.push(outcome);
       continue;
     }
-
     if (desc.value === undefined || desc.value.length === 0) {
       outcome.errors.push('signer is missing value');
       outcomes.push(outcome);
@@ -264,7 +229,7 @@ export async function verifyEnvelope(
     }
 
     const overrideKey = publicKeys ? publicKeys.get(i) : undefined;
-    const verifierInput: VerifierKeyInput = { algorithm: desc.algorithm };
+    const verifierInput: JsfVerifierKeyInput = { algorithm: desc.algorithm };
     if (overrideKey !== undefined) verifierInput.publicKey = overrideKey;
     if (desc.publicKey !== undefined) verifierInput.embeddedPublicKey = desc.publicKey;
     if (desc.certificatePath !== undefined)
@@ -274,16 +239,12 @@ export async function verifyEnvelope(
     try {
       verifier = binding.toVerifier(verifierInput);
     } catch (e) {
-      // No key available, or key/algorithm mismatch on construction.
-      // Treat lack-of-key as a caller bug at the verify level.
       raiseVerify((e as Error).message);
     }
 
-    // Build the canonical view as if signer i is the one being verified.
-    // Strip its `value` so the canonical form matches what was signed.
-    const tmpDesc: SignerDescriptor = { ...desc };
+    const tmpDesc: JsfSignerDescriptor = { ...desc };
     delete tmpDesc.value;
-    const stateForVerify: WrapperState = {
+    const stateForVerify: JsfWrapperState = {
       ...state,
       signers: state.signers.map((s, idx) => (idx === i ? tmpDesc : s)),
       finalized: state.finalized.map((f, idx) => (idx === i ? false : f)),
@@ -301,17 +262,15 @@ export async function verifyEnvelope(
     } catch (e) {
       outcome.errors.push(`verifier threw: ${(e as Error).message}`);
     }
-    if (!ok) {
-      outcome.errors.push('signature did not verify');
-    } else {
-      outcome.valid = true;
-    }
+    if (!ok) outcome.errors.push('signature did not verify');
+    else outcome.valid = true;
     outcomes.push(outcome);
   }
 
-  const aggregateValid = envelopeErrors.length === 0 && applyPolicy(outcomes, policy);
+  const aggregateValid =
+    envelopeErrors.length === 0 && applyPolicy(outcomes.map((o) => o.valid), policy);
 
-  const out: OrchestratorVerifyResult = {
+  const out: JsfOrchestratorVerifyResult = {
     valid: aggregateValid,
     mode: state.mode,
     signers: outcomes,
@@ -322,25 +281,12 @@ export async function verifyEnvelope(
   return out;
 }
 
-function applyPolicy(outcomes: SignerVerifyOutcome[], policy: VerifyPolicy): boolean {
-  const ok = outcomes.filter((o) => o.valid).length;
-  if (policy === 'all') return ok === outcomes.length;
-  if (policy === 'any') return ok >= 1;
-  return ok >= policy.atLeast;
-}
+// -- Append helper ----------------------------------------------------------
 
-// -- Append helpers (single binding-level operation) --------------------------
-
-/**
- * Build a `WrapperState` for "append a new signer to an existing
- * envelope" flows. The orchestrator does the work; the binding
- * decides whether the envelope mode is acceptable for the operation
- * (e.g., only chain envelopes accept `appendChainSigner`).
- */
 export function appendDescriptor(
-  existing: WrapperState,
-  newDescriptor: SignerDescriptor,
-): WrapperState {
+  existing: JsfWrapperState,
+  newDescriptor: JsfSignerDescriptor,
+): JsfWrapperState {
   return {
     mode: existing.mode,
     options: existing.options,

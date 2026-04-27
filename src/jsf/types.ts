@@ -7,7 +7,9 @@
  */
 
 import type { JsonObject, JsonValue, JwkPublicKey, KeyInput } from '../types.js';
-import type { EnvelopeMode, Signer, VerifyPolicy } from '../core/types.js';
+import type { Signer } from '../core/signer.js';
+import type { VerifyPolicy } from '../core/policy.js';
+import type { JsfEnvelopeMode as EnvelopeMode } from './internal-types.js';
 
 /**
  * JSF algorithm names. These match the JSF 0.82 specification and the

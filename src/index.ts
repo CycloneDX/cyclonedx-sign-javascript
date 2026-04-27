@@ -79,6 +79,10 @@ export {
   computeCanonicalInputs,
 } from './jsf/sign.js';
 
+// -- JSS counter sign helper re-exported at the top level --------------------
+
+export { countersign as countersignJss } from './jss/sign.js';
+
 // -- Shared utilities --------------------------------------------------------
 
 export { canonicalize, canonicalizeToString } from './jcs.js';
@@ -133,29 +137,22 @@ export type {
   NormalizedPublicKey,
 } from './jwk.js';
 
-// -- Format-agnostic core (advanced) ----------------------------------------
+// -- Format-agnostic core (the plug-in surface) -----------------------------
+//
+// The Signer / Verifier interfaces and the verify-policy aggregator are
+// the only cross-format primitives. HSM, KMS, and remote-signer adapter
+// packages target these. Format-specific shapes (envelope modes, signer
+// descriptors, wrapper state, validation) live next to the format that
+// owns them: see `@cyclonedx/sign/jsf` and `@cyclonedx/sign/jss`.
 
-export type {
-  EnvelopeMode,
-  EnvelopeOptions,
-  EnvelopeView,
-  Signer,
-  SignerDescriptor,
-  SignerVerifyOutcome,
-  Verifier,
-  VerifyPolicy,
-  WrapperState,
-} from './core/types.js';
+export type { Signer, Verifier, VerifyPolicy } from './core/index.js';
+export { applyPolicy } from './core/index.js';
 
-export type {
-  FormatBinding,
-  SignerKeyInput,
-  VerifierKeyInput,
-} from './core/binding.js';
+// -- JSF-specific helpers (advanced) ----------------------------------------
 
 export {
   JSF_RESERVED_WORDS,
   JSF_SIGNATURECORE_FIELDS,
   isJsfReservedWord,
   isJsfSignatureCoreField,
-} from './core/jsf-reserved.js';
+} from './jsf/reserved.js';
