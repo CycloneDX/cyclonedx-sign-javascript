@@ -70,7 +70,7 @@ export function validateExtensionsInvariants(
           `signer #${i} extensionValues key "${key}" collides with a JSF reserved word (${RESERVED_LIST})`,
         );
       }
-      if (!declaredSet || !declaredSet.has(key)) {
+      if (!declaredSet?.has(key)) {
         raise(
           `signer #${i} extensionValues key "${key}" is not declared in the envelope's extensions list`,
         );

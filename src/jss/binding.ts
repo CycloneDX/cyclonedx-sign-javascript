@@ -237,11 +237,13 @@ export class JssBinding {
     }
     const algorithm = input.algorithm;
     const privateKey = toPrivateKey(input.privateKey);
+    // Body has no await; return a resolved promise to satisfy the
+    // async `Signer` contract without an empty `async` keyword.
     return {
-      sign: async (canonicalBytes) => {
+      sign: (canonicalBytes) => {
         const digest = hashBytes(hashAlgorithm, canonicalBytes);
         const sig = signHash(algorithm, hashAlgorithm, digest, privateKey);
-        return new Uint8Array(sig);
+        return Promise.resolve(new Uint8Array(sig));
       },
     };
   }
@@ -252,14 +254,16 @@ export class JssBinding {
     }
     const algorithm = input.algorithm;
     return {
-      verify: async (canonicalBytes, signature) => {
+      verify: (canonicalBytes, signature) => {
         const hashAlgorithm = (input as { hashAlgorithm?: string }).hashAlgorithm ?? 'sha-256';
         if (!isRegisteredHashAlgorithm(hashAlgorithm)) {
           throw new JssInputError(`Unsupported JSS hash algorithm: ${hashAlgorithm}`);
         }
         const digest = hashBytes(hashAlgorithm, canonicalBytes);
         const publicKey = resolveVerifyingKey(input);
-        return verifyHash(algorithm, hashAlgorithm, digest, Buffer.from(signature), publicKey);
+        return Promise.resolve(
+          verifyHash(algorithm, hashAlgorithm, digest, Buffer.from(signature), publicKey),
+        );
       },
     };
   }

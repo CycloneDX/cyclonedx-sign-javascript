@@ -487,13 +487,15 @@ async function verifyOne(
   return out;
 }
 
-async function verifyCounterOne(
+// Body has no await; the caller (`verifyOne`) does `await
+// verifyCounterOne(...)` which is a no-op on a non-promise value.
+function verifyCounterOne(
   strippedPayload: JsonObject,
   targetDesc: JssSignerDescriptor,
   counterWire: JsonObject,
   options: JssVerifyOptions,
   signatureProperty: string,
-): Promise<JssSignerVerifyResult> {
+): JssSignerVerifyResult {
   const counterDesc = JSS_BINDING.descriptorFromWire(counterWire, {});
   const ext = counterDesc.extensionValues ?? {};
   const hashAlgorithm = (ext[JSS_HASH_ALGO_KEY] as string | undefined) ?? DEFAULT_HASH_ALGORITHM;

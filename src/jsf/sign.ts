@@ -276,7 +276,7 @@ function validateAppendExtensions(
         `extensionValues key "${k}" collides with a JSF reserved word`,
       );
     }
-    if (!declaredSet || !declaredSet.has(k)) {
+    if (!declaredSet?.has(k)) {
       throw new JsfInputError(
         `extensionValues key "${k}" is not declared in the existing envelope's extensions list; ` +
           'appending cannot grow the extensions list because that would invalidate prior signers',

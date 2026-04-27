@@ -33,15 +33,13 @@ exclude_paths:
   # Generated lockfile.
   - package-lock.json
 
-  # Fixture generator script. One-shot build tool, not shipped code;
-  # it imports from dist/ at runtime and writes committed fixture
-  # files. Analyzers flag non-literal fs access and "unsupported
-  # ESM syntax" here, neither of which is actionable.
-  - test/fixtures/jsf/build-envelopes.mjs
-
-  # Committed fixture data (test envelopes, PEM keys, interop corpus).
-  - test/fixtures/**/*.json
-  - test/fixtures/**/*.pem
+  # Test sources are excluded from analysis. Tests are necessarily
+  # repetitive (per-suite setup, parameterized round-trip checks) and
+  # the duplication detector counts that against the production grade
+  # even though it is the right shape for tests. Linting / security
+  # analysis on tests is handled by the CI workflow's `npm test` and
+  # `npm run typecheck` jobs locally; Codacy focuses on shipped code.
+  - test/**
 
   # Coverage output.
   - coverage/**

@@ -666,13 +666,11 @@ Apache License 2.0. See [LICENSE][license_file].
 [shield_website]: https://img.shields.io/badge/https://-cyclonedx.org-blue.svg "homepage"
 [shield_slack]: https://img.shields.io/badge/slack-join-blue?logo=Slack&logoColor=white "slack join"
 [shield_groups]: https://img.shields.io/badge/discussion-groups.io-blue.svg "groups discussion"
-[shield_twitter-follow]: https://img.shields.io/badge/Twitter-follow-blue?logo=Twitter&logoColor=white "twitter follow"
 
 [license_file]: LICENSE
 [link_website]: https://cyclonedx.org/
 [link_gh-workflow-test]: https://github.com/CycloneDX/cyclonedx-sign-javascript/actions/workflows/ci.yml?query=branch%3Amain
 [link_codacy]: https://app.codacy.com/gh/CycloneDX/cyclonedx-sign-javascript/dashboard
-[link_ossf-best-practices]: https://www.bestpractices.dev/projects?q=cyclonedx-sign-javascript
 [link_npm]: https://www.npmjs.com/package/@cyclonedx/sign
 [link_slack]: https://cyclonedx.org/slack/invite
 [link_discussion]: https://groups.io/g/CycloneDX
