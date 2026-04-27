@@ -15,12 +15,12 @@
  *   - RSA-PSS: the EMSA-PSS encoded message is constructed manually
  *     from the supplied hash, then RSA private-keyed via
  *     privateEncrypt(RSA_NO_PADDING). Same reason as PKCS#1.
- *   - ECDSA (`ES256`/`ES384`/`ES512`): NOT IMPLEMENTED. Pure
- *     `node:crypto` cannot consume a pre-hashed digest for ECDSA
- *     without an external dependency. This is documented in
- *     `docs/specs/jss-implementation-plan.md` § 8.18 and tracked as
- *     a roadmap item; calling sign/verify with these algorithms
- *     throws `JssNotImplementedError`.
+ *   - ECDSA (`ES256`/`ES384`/`ES512`): implemented via `@noble/curves`
+ *     `p256`/`p384`/`p521` because `node:crypto` cannot consume a
+ *     pre-hashed digest for ECDSA without an external dependency.
+ *     Output is IEEE P-1363 (r || s) per JWA RFC 7518 § 3.4. Sign
+ *     normalizes to low-S; verify accepts both forms for cross
+ *     implementation interop.
  */
 
 import {

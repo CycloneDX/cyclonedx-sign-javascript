@@ -40,7 +40,7 @@ import {
 } from './algorithms.js';
 import { hashBytes, isRegisteredHashAlgorithm } from './hash.js';
 import { pemBodyFromPublicKey, publicKeyFromPemBody, privateKeyFromPem } from './pem.js';
-import { createPrivateKey, createPublicKey, KeyObject } from 'node:crypto';
+import { X509Certificate, createPrivateKey, createPublicKey, KeyObject } from 'node:crypto';
 
 /** Properties JSS reserves on a signaturecore (X.590 § 6.2.1). */
 const JSS_RESERVED = new Set([
@@ -389,13 +389,7 @@ function resolveVerifyingKey(input: JssVerifierKeyInput): KeyObject {
 
 function certPublicKey(b64Der: string): KeyObject {
   const der = Buffer.from(b64Der, 'base64');
-  // X509Certificate is in node:crypto; importing dynamically avoids a
-  // top-level import cycle if X509Certificate is unavailable in the
-  // runtime (older Node versions).
-  // eslint-disable-next-line @typescript-eslint/no-var-requires -- dynamic require to avoid Node-version pinning at module load time.
-  const { X509Certificate } = require('node:crypto') as typeof import('node:crypto');
-  const cert = new X509Certificate(der);
-  return cert.publicKey;
+  return new X509Certificate(der).publicKey;
 }
 
 export {

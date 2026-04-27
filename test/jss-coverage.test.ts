@@ -99,6 +99,7 @@ describe('multi-level counter signing', () => {
     // First counter sign: nests under signers[0].signature.
     const cs1 = await countersign(signed, {
       signer: { algorithm: 'Ed25519', privateKey: b.privateKey, public_key: 'auto' },
+      publicKeys: new Map([[0, a.publicKey]]),
     });
     // Multi-level: counter-sign the existing counter signature by
     // recursively descending. The countersign() helper attaches a new
@@ -136,6 +137,7 @@ describe('multi-level counter signing', () => {
         privateKey: b.privateKey,
         public_key: 'auto',
       },
+      publicKeys: new Map([[0, a.publicKey]]),
     });
     const counter = (cs.signatures as Record<string, JsonValue>[])[0]!.signature as Record<string, JsonValue>;
     expect(counter.hash_algorithm).toBe('sha-512');
@@ -261,6 +263,7 @@ describe('custom signatureProperty', () => {
     const cs = await countersign(signed, {
       signer: { algorithm: 'Ed25519', privateKey: b.privateKey, public_key: 'auto' },
       signatureProperty: 'jssSignatures',
+      publicKeys: new Map([[0, a.publicKey]]),
     });
     const r2 = await verify(cs, {
       signatureProperty: 'jssSignatures',

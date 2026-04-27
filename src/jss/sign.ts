@@ -175,10 +175,48 @@ export async function countersign(
   validateSignerInput(options.signer);
   const signatureProperty = options.signatureProperty ?? DEFAULT_SIGNATURE_PROPERTY;
 
-  // Verify-first defense (CWE-345 / CWE-347). Same posture as JSF append.
+  // Strong verify-first defense against CWE-345 / CWE-347.
+  //
+  // The counter signer's canonical view commits to the target
+  // signaturecore's full value (X.590 § 7.2.2). Endorsing a tampered
+  // target is exactly the failure this check exists to prevent. To
+  // avoid silent reliance on attacker-controllable embedded keys,
+  // counter-signing REQUIRES one of the two:
+  //
+  //   1. `options.publicKeys` covering every existing signer index
+  //      with keys obtained out of band. The verify-first check uses
+  //      ONLY those keys; no embedded-key fallback is allowed.
+  //   2. `options.skipVerifyExisting: true` to opt out entirely (the
+  //      caller has verified the envelope out of band).
+  //
+  // Calls that meet neither condition throw `JssEnvelopeError`.
+  const view = JSS_BINDING.detect(signedPayload, signatureProperty);
+  if (!view) {
+    throw new JssEnvelopeError(`Payload has no "${signatureProperty}" property`);
+  }
   if (!options.skipVerifyExisting) {
-    const verifyOptions: JssVerifyOptions = { signatureProperty };
-    if (options.publicKeys !== undefined) verifyOptions.publicKeys = options.publicKeys;
+    const expected = view.signers.length;
+    if (options.publicKeys === undefined) {
+      throw new JssEnvelopeError(
+        `refusing to countersign without trusted keys: pass options.publicKeys covering ` +
+          `every existing signer (0..${expected - 1}) so the verify-first defense uses ` +
+          `keys you control, or pass options.skipVerifyExisting: true to bypass the ` +
+          `check entirely (you must then verify the envelope out of band).`,
+      );
+    }
+    for (let i = 0; i < expected; i += 1) {
+      if (!options.publicKeys.has(i)) {
+        throw new JssEnvelopeError(
+          `refusing to countersign: options.publicKeys is missing an entry for existing ` +
+            `signer #${i}. Provide a trusted key for every signer 0..${expected - 1}, ` +
+            `or pass options.skipVerifyExisting: true to bypass the check.`,
+        );
+      }
+    }
+    const verifyOptions: JssVerifyOptions = {
+      signatureProperty,
+      publicKeys: options.publicKeys,
+    };
     const result = await verify(signedPayload, verifyOptions);
     if (!result.valid) {
       const failed = result.signers
@@ -186,16 +224,11 @@ export async function countersign(
         .map((s) => `#${s.index}: ${s.errors.join('; ')}`)
         .join(' | ');
       throw new JssEnvelopeError(
-        `refusing to countersign: existing envelope did not verify (${failed || result.errors.join('; ')}). ` +
-          'Pass skipVerifyExisting: true if you have already verified out of band.',
+        `refusing to countersign: existing envelope did not verify (${failed || result.errors.join('; ')}).`,
       );
     }
   }
 
-  const view = JSS_BINDING.detect(signedPayload, signatureProperty);
-  if (!view) {
-    throw new JssEnvelopeError(`Payload has no "${signatureProperty}" property`);
-  }
   const targetIndex = options.targetIndex ?? view.signers.length - 1;
   if (targetIndex < 0 || targetIndex >= view.signers.length) {
     throw new JssInputError(

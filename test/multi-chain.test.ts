@@ -192,14 +192,16 @@ describe('appendChainSigner', () => {
       signers: [{ algorithm: 'ES256', privateKey: a.privateKey }],
       mode: 'chain',
     });
-    const two = await appendChainSigner(initial, {
-      algorithm: 'RS256',
-      privateKey: b.privateKey,
-    });
-    const three = await appendChainSigner(two, {
-      algorithm: 'Ed25519',
-      privateKey: c.privateKey,
-    });
+    const two = await appendChainSigner(
+      initial,
+      { algorithm: 'RS256', privateKey: b.privateKey },
+      { publicKeys: new Map([[0, a.publicKey]]) },
+    );
+    const three = await appendChainSigner(
+      two,
+      { algorithm: 'Ed25519', privateKey: c.privateKey },
+      { publicKeys: new Map([[0, a.publicKey], [1, b.publicKey]]) },
+    );
     const result = await verify(three);
     expect(result.valid).toBe(true);
     expect(result.signers).toHaveLength(3);
@@ -212,10 +214,11 @@ describe('appendChainSigner', () => {
       signer: { algorithm: 'ES256', privateKey: a.privateKey },
     });
     await expect(
-      appendChainSigner(single, {
-        algorithm: 'ES256',
-        privateKey: ecPair().privateKey,
-      }),
+      appendChainSigner(
+        single,
+        { algorithm: 'ES256', privateKey: ecPair().privateKey },
+        { publicKeys: new Map([[0, a.publicKey]]) },
+      ),
     ).rejects.toThrow(JsfChainOrderError);
   });
 
@@ -226,10 +229,11 @@ describe('appendChainSigner', () => {
       mode: 'chain',
     });
     await expect(
-      appendMultiSigner(chain, {
-        algorithm: 'ES256',
-        privateKey: ecPair().privateKey,
-      }),
+      appendMultiSigner(
+        chain,
+        { algorithm: 'ES256', privateKey: ecPair().privateKey },
+        { publicKeys: new Map([[0, a.publicKey]]) },
+      ),
     ).rejects.toThrow(JsfChainOrderError);
   });
 
@@ -240,13 +244,44 @@ describe('appendChainSigner', () => {
       signers: [{ algorithm: 'ES256', privateKey: a.privateKey }],
       mode: 'multi',
     });
-    const both = await appendMultiSigner(initial, {
-      algorithm: 'ES256',
-      privateKey: b.privateKey,
-    });
+    const both = await appendMultiSigner(
+      initial,
+      { algorithm: 'ES256', privateKey: b.privateKey },
+      { publicKeys: new Map([[0, a.publicKey]]) },
+    );
     const result = await verify(both);
     expect(result.valid).toBe(true);
     expect(result.signers).toHaveLength(2);
+  });
+
+  it('rejects append when neither publicKeys nor skipVerifyExisting is supplied', async () => {
+    const a = ecPair();
+    const initial = await sign(payload(), {
+      signers: [{ algorithm: 'ES256', privateKey: a.privateKey }],
+      mode: 'chain',
+    });
+    await expect(
+      appendChainSigner(initial, { algorithm: 'ES256', privateKey: ecPair().privateKey }),
+    ).rejects.toThrow(/publicKeys|skipVerifyExisting/);
+  });
+
+  it('rejects append when publicKeys is missing an entry for an existing signer', async () => {
+    const a = ecPair();
+    const b = ecPair();
+    const initial = await sign(payload(), {
+      signers: [
+        { algorithm: 'ES256', privateKey: a.privateKey },
+        { algorithm: 'ES256', privateKey: b.privateKey },
+      ],
+      mode: 'multi',
+    });
+    await expect(
+      appendMultiSigner(
+        initial,
+        { algorithm: 'ES256', privateKey: ecPair().privateKey },
+        { publicKeys: new Map([[0, a.publicKey]]) }, // missing index 1
+      ),
+    ).rejects.toThrow(/missing an entry for existing signer #1/);
   });
 });
 
@@ -265,11 +300,22 @@ describe('appendChainSigner verify-first defense (CWE-345 / CWE-347)', () => {
     const v = arr[0]!.value;
     arr[0]!.value = (v.startsWith('A') ? 'B' : 'A') + v.slice(1);
 
+    // Caller passes the genuine signer-0 publicKey: verify-first uses
+    // the trusted key, sees the tampered value does not match, and
+    // refuses to append.
     await expect(
-      appendChainSigner(tampered, { algorithm: 'ES256', privateKey: b.privateKey }),
+      appendChainSigner(
+        tampered,
+        { algorithm: 'ES256', privateKey: b.privateKey },
+        { publicKeys: new Map([[0, a.publicKey]]) },
+      ),
     ).rejects.toThrow(JsfChainOrderError);
     await expect(
-      appendChainSigner(tampered, { algorithm: 'ES256', privateKey: b.privateKey }),
+      appendChainSigner(
+        tampered,
+        { algorithm: 'ES256', privateKey: b.privateKey },
+        { publicKeys: new Map([[0, a.publicKey]]) },
+      ),
     ).rejects.toThrow(/did not verify/);
   });
 
@@ -286,8 +332,35 @@ describe('appendChainSigner verify-first defense (CWE-345 / CWE-347)', () => {
     arr[0]!.value = (v.startsWith('A') ? 'B' : 'A') + v.slice(1);
 
     await expect(
-      appendMultiSigner(tampered, { algorithm: 'ES256', privateKey: b.privateKey }),
+      appendMultiSigner(
+        tampered,
+        { algorithm: 'ES256', privateKey: b.privateKey },
+        { publicKeys: new Map([[0, a.publicKey]]) },
+      ),
     ).rejects.toThrow(JsfChainOrderError);
+  });
+
+  it('refuses to append when an attacker substitutes BOTH value AND embedded publicKey', async () => {
+    // The defense's reason for being. Attacker forges a fake initial
+    // signer using their own keypair and embeds the matching publicKey.
+    // Embedded-key fallback would have rubber-stamped this; the strict
+    // mode requires caller-supplied trusted keys and refuses.
+    const a = ecPair(); // legitimate signer
+    const eve = ecPair(); // attacker
+    const fakeInitial = await sign(payload(), {
+      signers: [{ algorithm: 'ES256', privateKey: eve.privateKey }],
+      mode: 'chain',
+    });
+    const b = ecPair(); // legitimate counter-signer
+    // Caller provides the genuine signer-0 trusted key (a.publicKey),
+    // not the attacker's embedded one. Verify-first fails.
+    await expect(
+      appendChainSigner(
+        fakeInitial,
+        { algorithm: 'ES256', privateKey: b.privateKey },
+        { publicKeys: new Map([[0, a.publicKey]]) },
+      ),
+    ).rejects.toThrow(/did not verify/);
   });
 
   it('skipVerifyExisting opts out of the verify-first defense (use with care)', async () => {
@@ -331,11 +404,11 @@ describe('appendChainSigner verify-first defense (CWE-345 / CWE-347)', () => {
       ],
       mode: 'chain',
     });
-    // Without publicKeys override, append should fail because the
-    // verify-first cannot resolve a key.
+    // Without publicKeys override, append refuses up front under the
+    // strict verify-first posture (no embedded-key fallback allowed).
     await expect(
       appendChainSigner(initial, { algorithm: 'ES256', privateKey: b.privateKey }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/publicKeys|skipVerifyExisting/);
 
     // With publicKeys override, append succeeds.
     const grown = await appendChainSigner(

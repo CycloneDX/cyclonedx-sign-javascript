@@ -144,6 +144,7 @@ describe('JSS § 7.2: counter signing operation', () => {
     });
     const cs = await countersign(signed, {
       signer: { algorithm: 'Ed25519', privateKey: SPEC_PRIV_PEM, public_key: 'auto' },
+      publicKeys: new Map([[0, SPEC_PUB_PEM]]),
     });
     const top = await verify(cs);
     expect(top.valid).toBe(true);
@@ -261,6 +262,7 @@ describe('JSS counter signature', () => {
     });
     const cs = await countersign(signed, {
       signer: { algorithm: 'Ed25519', privateKey: b.privateKey, public_key: 'auto' },
+      publicKeys: new Map([[0, a.publicKey]]),
     });
     const top = await verify(cs);
     expect(top.valid).toBe(true);
@@ -278,10 +280,12 @@ describe('JSS counter signature', () => {
     });
     const cs = await countersign(signed, {
       signer: { algorithm: 'Ed25519', privateKey: b.privateKey, public_key: 'auto' },
+      publicKeys: new Map([[0, a.publicKey]]),
     });
     await expect(
       countersign(cs, {
         signer: { algorithm: 'Ed25519', privateKey: c.privateKey, public_key: 'auto' },
+        publicKeys: new Map([[0, a.publicKey]]),
       }),
     ).rejects.toThrow(/already has a counter signature/);
   });
@@ -296,11 +300,46 @@ describe('JSS counter signature', () => {
     const arr = tampered.signatures as { value: string }[];
     const v = arr[0]!.value;
     arr[0]!.value = (v.startsWith('A') ? 'B' : 'A') + v.slice(1);
+    // Caller passes the genuine signer-0 trusted key; verify-first
+    // uses it, sees the tampered value does not match, and refuses.
     await expect(
       countersign(tampered, {
         signer: { algorithm: 'Ed25519', privateKey: b.privateKey, public_key: 'auto' },
+        publicKeys: new Map([[0, a.publicKey]]),
       }),
     ).rejects.toThrow(JssEnvelopeError);
+  });
+
+  it('refuses to countersign without publicKeys or skipVerifyExisting', async () => {
+    const a = edPair('ed25519');
+    const b = edPair('ed25519');
+    const signed = await sign({ subject: 'cs' }, {
+      signer: { algorithm: 'Ed25519', privateKey: a.privateKey, public_key: 'auto' },
+    });
+    await expect(
+      countersign(signed, {
+        signer: { algorithm: 'Ed25519', privateKey: b.privateKey, public_key: 'auto' },
+      }),
+    ).rejects.toThrow(/publicKeys|skipVerifyExisting/);
+  });
+
+  it('refuses to countersign when an attacker substitutes BOTH value AND embedded public_key', async () => {
+    const a = edPair('ed25519');     // legitimate prior signer
+    const eve = edPair('ed25519');   // attacker
+    const b = edPair('ed25519');     // legitimate counter-signer
+    // Attacker builds a fake "signed" envelope with their own keypair
+    // and embeds the matching public_key. Embedded-key fallback would
+    // have rubber-stamped this; strict mode requires caller-supplied
+    // trusted keys and refuses.
+    const fake = await sign({ subject: 'cs' }, {
+      signer: { algorithm: 'Ed25519', privateKey: eve.privateKey, public_key: 'auto' },
+    });
+    await expect(
+      countersign(fake, {
+        signer: { algorithm: 'Ed25519', privateKey: b.privateKey, public_key: 'auto' },
+        publicKeys: new Map([[0, a.publicKey]]),
+      }),
+    ).rejects.toThrow(/did not verify/);
   });
 
   it('skipVerifyExisting opts out of the verify-first defense', async () => {

@@ -191,7 +191,23 @@ r.signers;        // array of { index, valid, algorithm, keyId, ... errors }
 r.valid;          // policy: 'all' (default), 'any', or { atLeast: n }
 ```
 
-`appendChainSigner` and `appendMultiSigner` verify the existing envelope before adding the new signature (CWE-345 / CWE-347 defense). The defense uses caller-supplied trusted keys when provided; otherwise it falls back to the keys embedded on prior signaturecores. To get the strongest defense, pass `publicKeys` (or `publicKey`) so the check uses keys you control. When trusted keys are not available, set `skipVerifyExisting: true` and verify the envelope yourself out of band first.
+`appendChainSigner` and `appendMultiSigner` verify the existing envelope before adding the new signature (CWE-345 / CWE-347 defense). The defense is strict: the caller MUST pass `publicKeys` covering every existing signer with keys obtained out of band, OR opt out explicitly via `skipVerifyExisting: true`. There is no fallback to embedded keys; that fallback would let an attacker who substitutes both the signature and the embedded `publicKey` slip past the check. Calls that supply neither option throw `JsfChainOrderError`.
+
+```ts
+// strong: trusted keys for every existing signer
+const grown = await appendChainSigner(
+  envelope,
+  { algorithm: JsfAlgorithms.RS256, privateKey: keyB },
+  { publicKeys: new Map([[0, knownPubKeyForSigner0]]) },
+);
+
+// opt out: caller verified the envelope out of band first
+const grown2 = await appendChainSigner(
+  envelope,
+  { algorithm: JsfAlgorithms.RS256, privateKey: keyB },
+  { skipVerifyExisting: true },
+);
+```
 
 ## JSF: `extensions` and `excludes`
 
@@ -401,22 +417,27 @@ Calling `sign` on an already-signed envelope appends a new independent signer pe
 
 ## JSS: counter signing
 
-X.590 § 7.2 counter-signing nests a `signature` property on the target signaturecore. The counter signer commits to the target signer's complete value, so a counter signature endorses the target. The library verifies the existing envelope before counter signing (CWE-345 / CWE-347 defense); pass `skipVerifyExisting: true` to opt out.
+X.590 § 7.2 counter-signing nests a `signature` property on the target signaturecore. The counter signer commits to the target signer's complete value, so a counter signature endorses the target. The verify-first defense (CWE-345 / CWE-347) is strict: the caller MUST pass `publicKeys` covering every existing signer with keys obtained out of band, OR opt out explicitly via `skipVerifyExisting: true`. There is no fallback to embedded keys; that fallback would let an attacker who substitutes both the signature and the embedded `public_key` slip past the check. Calls that supply neither option throw `JssEnvelopeError`.
 
 ```ts
 import { countersign, verify, JssAlgorithms } from '@cyclonedx/sign/jss';
 
+// strong: trusted keys for every existing signer
 const cs = await countersign(signed, {
   signer: { algorithm: JssAlgorithms.Ed25519, privateKey: notaryPem, public_key: 'auto' },
   // targetIndex defaults to the last signaturecore in the array.
-  publicKeys: new Map([[0, knownPubKeyForSigner0]]), // verify-first uses these
+  publicKeys: new Map([[0, knownPubKeyForSigner0]]),
 });
 
 const both = await verify(cs, { verifyCounterSignatures: true });
 both.signers[0].countersignature?.valid; // true
-```
 
-The verify-first defense uses caller-supplied trusted keys when provided; otherwise it falls back to the keys embedded on the signaturecores. To get the strongest defense, pass `publicKeys` (or `publicKey`) so the check uses keys you control. When trusted keys are not available at append time, set `skipVerifyExisting: true` explicitly and verify the envelope yourself out of band before passing it in.
+// opt out: caller verified the envelope out of band first
+const cs2 = await countersign(signed, {
+  signer: { algorithm: JssAlgorithms.Ed25519, privateKey: notaryPem, public_key: 'auto' },
+  skipVerifyExisting: true,
+});
+```
 
 ## JSS: custom metadata (X.590 § 6.3)
 

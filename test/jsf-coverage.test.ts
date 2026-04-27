@@ -152,10 +152,11 @@ describe('custom signatureProperty for multi / chain', () => {
       mode: 'chain',
       signatureProperty: 'attestation',
     });
-    const grown = await appendChainSigner(initial, {
-      algorithm: 'ES256',
-      privateKey: b.privateKey,
-    }, { signatureProperty: 'attestation' });
+    const grown = await appendChainSigner(
+      initial,
+      { algorithm: 'ES256', privateKey: b.privateKey },
+      { signatureProperty: 'attestation', publicKeys: new Map([[0, a.publicKey]]) },
+    );
     const r = await verify(grown, { signatureProperty: 'attestation' });
     expect(r.valid).toBe(true);
     expect(r.signers).toHaveLength(2);
