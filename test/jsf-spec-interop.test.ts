@@ -98,8 +98,7 @@ describe('JSF spec interop: single-mode JWK vectors', () => {
     ]);
     expect(result.signers[0]?.extensionValues).toEqual({
       otherExt: 'Cool Stuff',
-      'https://example.com/extension': { 'life-is-great': true },
-    });
+      'https://example.com/extension': { 'life-is-great': true } });
   });
 
   it('p256#es256@name-jwk.json verifies under the custom property name', async () => {
@@ -135,8 +134,7 @@ describe('JSF spec interop: multi-signer vectors', () => {
       publicKeys: new Map<number, KeyInput>([
         [0, p256],
         [1, r2048],
-      ]),
-    });
+      ]) });
     expect(result.valid).toBe(true);
     expect(result.extensions).toEqual([
       'otherExt',
@@ -145,11 +143,9 @@ describe('JSF spec interop: multi-signer vectors', () => {
     // The vector has the second signer omit one extension property.
     expect(result.signers[0]?.extensionValues).toEqual({
       otherExt: 'Cool Stuff',
-      'https://example.com/extension': { 'life-is-great': true },
-    });
+      'https://example.com/extension': { 'life-is-great': true } });
     expect(result.signers[1]?.extensionValues).toEqual({
-      otherExt: 'Other Data',
-    });
+      otherExt: 'Other Data' });
   });
 
   it('mult-excl-kid verifies and reports excludes', async () => {
@@ -160,8 +156,7 @@ describe('JSF spec interop: multi-signer vectors', () => {
       publicKeys: new Map<number, KeyInput>([
         [0, p256],
         [1, r2048],
-      ]),
-    });
+      ]) });
     expect(result.valid).toBe(true);
     expect(result.excludes).toEqual(['myUnsignedData']);
   });
@@ -184,8 +179,7 @@ describe('JSF spec interop: chain vectors', () => {
       publicKeys: new Map<number, KeyInput>([
         [0, p256],
         [1, r2048],
-      ]),
-    });
+      ]) });
     expect(result.valid).toBe(true);
     expect(result.extensions).toEqual([
       'otherExt',
@@ -195,10 +189,8 @@ describe('JSF spec interop: chain vectors', () => {
     // extension property values.
     expect(result.signers[0]?.extensionValues).toEqual({
       otherExt: 'Cool Stuff',
-      'https://example.com/extension': { 'life-is-great': true },
-    });
+      'https://example.com/extension': { 'life-is-great': true } });
     expect(result.signers[1]?.extensionValues).toEqual({
-      otherExt: 'Other Data',
-    });
+      otherExt: 'Other Data' });
   });
 });

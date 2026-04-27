@@ -23,27 +23,9 @@ import {
 } from '../src/jsf/algorithms.js';
 import { toPrivateKey, toPublicKey } from '../src/jwk.js';
 import { JsfInputError } from '../src/errors.js';
-
-interface KeyPair {
-  privateKey: KeyObject;
-  publicKey: KeyObject;
-}
+import { ecPair, edPair, rsaPair, type KeyPair } from './helpers.js';
 
 const DATA = new TextEncoder().encode('canonical payload');
-
-function rsaKeys(modulusLength = 2048): KeyPair {
-  return generateKeyPairSync('rsa', { modulusLength }) as unknown as KeyPair;
-}
-function ecKeys(namedCurve: 'prime256v1' | 'secp384r1' | 'secp521r1'): KeyPair {
-  return generateKeyPairSync('ec', { namedCurve }) as unknown as KeyPair;
-}
-function edKeys(kind: 'ed25519' | 'ed448'): KeyPair {
-  // `generateKeyPairSync` accepts these string literals at runtime but
-  // the @types/node overloads do not expose a single signature that
-  // unions them, so we route through `unknown` to keep the helper
-  // generic without dropping every call site into `any`.
-  return (generateKeyPairSync as unknown as (k: string) => KeyPair)(kind);
-}
 
 describe('algorithm registry', () => {
   it('knows every specified JSF algorithm', () => {
@@ -81,7 +63,7 @@ describe('algorithm registry', () => {
 
 describe('signBytes + verifyBytes round-trips', () => {
   it('RS256 signs and verifies', () => {
-    const { privateKey, publicKey } = rsaKeys();
+    const { privateKey, publicKey } = rsaPair();
     const spec = getAlgorithmSpec('RS256');
     const priv = toPrivateKey(privateKey);
     const pub = toPublicKey(publicKey);
@@ -90,7 +72,7 @@ describe('signBytes + verifyBytes round-trips', () => {
   });
 
   it('PS256 signs and verifies with distinct ciphertexts per call', () => {
-    const { privateKey, publicKey } = rsaKeys();
+    const { privateKey, publicKey } = rsaPair();
     const spec = getAlgorithmSpec('PS256');
     const priv = toPrivateKey(privateKey);
     const pub = toPublicKey(publicKey);
@@ -102,7 +84,7 @@ describe('signBytes + verifyBytes round-trips', () => {
   });
 
   it('ES256 signs and verifies with a fixed-length raw R||S signature', () => {
-    const { privateKey, publicKey } = ecKeys('prime256v1');
+    const { privateKey, publicKey } = ecPair('prime256v1');
     const spec = getAlgorithmSpec('ES256');
     const priv = toPrivateKey(privateKey);
     const pub = toPublicKey(publicKey);
@@ -112,7 +94,7 @@ describe('signBytes + verifyBytes round-trips', () => {
   });
 
   it('ES384 produces a 96-byte raw signature', () => {
-    const { privateKey, publicKey } = ecKeys('secp384r1');
+    const { privateKey, publicKey } = ecPair('secp384r1');
     const spec = getAlgorithmSpec('ES384');
     const priv = toPrivateKey(privateKey);
     const pub = toPublicKey(publicKey);
@@ -122,7 +104,7 @@ describe('signBytes + verifyBytes round-trips', () => {
   });
 
   it('ES512 produces a 132-byte raw signature', () => {
-    const { privateKey, publicKey } = ecKeys('secp521r1');
+    const { privateKey, publicKey } = ecPair('secp521r1');
     const spec = getAlgorithmSpec('ES512');
     const priv = toPrivateKey(privateKey);
     const pub = toPublicKey(publicKey);
@@ -132,7 +114,7 @@ describe('signBytes + verifyBytes round-trips', () => {
   });
 
   it('Ed25519 signs and verifies', () => {
-    const { privateKey, publicKey } = edKeys('ed25519');
+    const { privateKey, publicKey } = edPair('ed25519');
     const spec = getAlgorithmSpec('Ed25519');
     const priv = toPrivateKey(privateKey);
     const pub = toPublicKey(publicKey);
@@ -141,7 +123,7 @@ describe('signBytes + verifyBytes round-trips', () => {
   });
 
   it('Ed448 signs and verifies', () => {
-    const { privateKey, publicKey } = edKeys('ed448');
+    const { privateKey, publicKey } = edPair('ed448');
     const spec = getAlgorithmSpec('Ed448');
     const priv = toPrivateKey(privateKey);
     const pub = toPublicKey(publicKey);
@@ -167,7 +149,7 @@ describe('signBytes + verifyBytes round-trips', () => {
 
 describe('signBytes + verifyBytes tamper detection', () => {
   it('RS256 verify fails when data changes', () => {
-    const { privateKey, publicKey } = rsaKeys();
+    const { privateKey, publicKey } = rsaPair();
     const spec = getAlgorithmSpec('RS256');
     const priv = toPrivateKey(privateKey);
     const pub = toPublicKey(publicKey);
@@ -177,7 +159,7 @@ describe('signBytes + verifyBytes tamper detection', () => {
   });
 
   it('ES256 verify fails on malformed signature length', () => {
-    const { privateKey, publicKey } = ecKeys('prime256v1');
+    const { privateKey, publicKey } = ecPair('prime256v1');
     const spec = getAlgorithmSpec('ES256');
     const priv = toPrivateKey(privateKey);
     const pub = toPublicKey(publicKey);
@@ -198,28 +180,28 @@ describe('signBytes + verifyBytes tamper detection', () => {
 
 describe('key-type gating', () => {
   it('rejects an RSA signing request with an EC key', () => {
-    const { privateKey } = ecKeys('prime256v1');
+    const { privateKey } = ecPair('prime256v1');
     const spec = getAlgorithmSpec('RS256');
     const priv = toPrivateKey(privateKey);
     expect(() => signBytes(spec, DATA, priv.keyObject, priv.curve)).toThrow(/RSA key/);
   });
 
   it('rejects ES256 with a P-384 key', () => {
-    const { privateKey } = ecKeys('secp384r1');
+    const { privateKey } = ecPair('secp384r1');
     const spec = getAlgorithmSpec('ES256');
     const priv = toPrivateKey(privateKey);
     expect(() => signBytes(spec, DATA, priv.keyObject, priv.curve)).toThrow(/P-256/);
   });
 
   it('rejects Ed25519 with an Ed448 key', () => {
-    const { privateKey } = edKeys('ed448');
+    const { privateKey } = edPair('ed448');
     const spec = getAlgorithmSpec('Ed25519');
     const priv = toPrivateKey(privateKey);
     expect(() => signBytes(spec, DATA, priv.keyObject, priv.curve)).toThrow(/ed25519/i);
   });
 
   it('rejects HMAC signing with an asymmetric key', () => {
-    const { privateKey } = rsaKeys();
+    const { privateKey } = rsaPair();
     const spec = getAlgorithmSpec('HS256');
     const priv = toPrivateKey(privateKey);
     expect(() => signBytes(spec, DATA, priv.keyObject, priv.curve)).toThrow(/symmetric/);

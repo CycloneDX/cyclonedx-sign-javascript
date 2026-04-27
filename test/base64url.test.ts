@@ -2,8 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   decodeBase64Url,
   encodeBase64Url,
-  encodeBase64UrlBigInteger,
-} from '../src/base64url.js';
+  encodeBase64UrlBigInteger } from '../src/base64url.js';
 
 describe('base64url', () => {
   it('round-trips arbitrary bytes', () => {

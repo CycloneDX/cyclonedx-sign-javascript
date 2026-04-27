@@ -23,15 +23,7 @@ import {
 import { sign as signJss, verify as verifyJss } from '../src/jss/index.js';
 import { JssNotImplementedError, SignatureError, JsfError } from '../src/errors.js';
 import type { JsonObject } from '../src/types.js';
-
-interface KeyPair {
-  privateKey: KeyObject;
-  publicKey: KeyObject;
-}
-
-function ecPair(): KeyPair {
-  return generateKeyPairSync('ec', { namedCurve: 'prime256v1' }) as unknown as KeyPair;
-}
+import { ecPair, type KeyPair } from './helpers.js';
 
 describe('sign and verify', () => {
   it('throws when cyclonedxVersion is omitted on sign (no default)', async () => {

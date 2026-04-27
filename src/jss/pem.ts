@@ -13,6 +13,7 @@
 
 import { createPublicKey, createPrivateKey, KeyObject } from 'node:crypto';
 import { JssInputError, JssEnvelopeError } from '../errors.js';
+import type { KeyInput } from '../types.js';
 
 const PEM_PUBLIC_HEADER = '-----BEGIN PUBLIC KEY-----';
 const PEM_PUBLIC_FOOTER = '-----END PUBLIC KEY-----';
@@ -88,6 +89,59 @@ export function privateKeyFromPem(input: string): KeyObject {
   } catch (err) {
     throw new JssInputError(`private key body did not parse as PKCS#8 PEM: ${(err as Error).message}`);
   }
+}
+
+/**
+ * Normalize any accepted private-key input form into a node `KeyObject`:
+ *
+ *   - `KeyObject` instances pass through.
+ *   - PEM strings (with headers, or PKCS#8 body without headers) parse
+ *     via `privateKeyFromPem`.
+ *   - `Buffer` / `Uint8Array` values are treated as raw PKCS#8 DER.
+ *   - JWK objects (with a `kty` field) parse via `createPrivateKey`.
+ *
+ * Single source of truth for JSS sign-side key normalization; consumed
+ * by `src/jss/sign.ts` and `src/jss/binding.ts`.
+ */
+export function toPrivateKey(input: KeyInput): KeyObject {
+  if (input instanceof KeyObject) return input;
+  if (typeof input === 'string') return privateKeyFromPem(input);
+  if (Buffer.isBuffer(input) || input instanceof Uint8Array) {
+    return createPrivateKey({ key: Buffer.from(input), format: 'der', type: 'pkcs8' });
+  }
+  if (typeof input === 'object' && 'kty' in (input as Record<string, unknown>)) {
+    return createPrivateKey({ key: input as unknown as Record<string, unknown>, format: 'jwk' });
+  }
+  throw new JssInputError('Unsupported private key input for JSS');
+}
+
+/**
+ * Normalize any accepted public-key input form into a node
+ * `KeyObject`. `KeyObject` private keys are converted to their public
+ * half. PEM strings with headers parse directly; bare base64 bodies
+ * are routed through `publicKeyFromPemBody`. `Buffer` / `Uint8Array`
+ * values are treated as DER SPKI; JWK objects (with `kty`) parse
+ * directly. Single source of truth shared by `src/jss/sign.ts` and
+ * `src/jss/binding.ts`.
+ */
+export function toPublicKey(input: KeyInput): KeyObject {
+  if (input instanceof KeyObject) {
+    return input.type === 'private' ? createPublicKey(input) : input;
+  }
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (trimmed.startsWith('-----BEGIN ')) {
+      return createPublicKey({ key: trimmed, format: 'pem' });
+    }
+    return publicKeyFromPemBody(trimmed);
+  }
+  if (Buffer.isBuffer(input) || input instanceof Uint8Array) {
+    return createPublicKey({ key: Buffer.from(input), format: 'der', type: 'spki' });
+  }
+  if (typeof input === 'object' && 'kty' in (input as Record<string, unknown>)) {
+    return createPublicKey({ key: input as unknown as Record<string, unknown>, format: 'jwk' });
+  }
+  throw new JssInputError('Unsupported public key input for JSS');
 }
 
 function wrap(body: string, header: string, footer: string): string {

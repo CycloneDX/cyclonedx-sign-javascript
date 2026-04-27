@@ -33,7 +33,7 @@ import { canonicalize } from '../src/jcs.js';
 import { sign, verify, countersign } from '../src/jss/index.js';
 import { JssEnvelopeError, JssInputError } from '../src/errors.js';
 import type { JsonObject } from '../src/types.js';
-
+import { edPair, rsaPair, type KeyPair } from './helpers.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SPEC = join(HERE, 'fixtures', 'jss', 'spec');
 
@@ -43,17 +43,6 @@ const SPEC_PUB_BODY = SPEC_PUB_PEM
   .replace(/-----[^-]+-----/g, '')
   .replace(/\s+/g, '')
   .replace(/=+$/, '');
-
-interface KeyPair {
-  privateKey: KeyObject;
-  publicKey: KeyObject;
-}
-function rsaPair(): KeyPair {
-  return generateKeyPairSync('rsa', { modulusLength: 2048 }) as unknown as KeyPair;
-}
-function edPair(kind: 'ed25519' | 'ed448'): KeyPair {
-  return (generateKeyPairSync as unknown as (k: string) => KeyPair)(kind);
-}
 
 describe('JSS § 7.1: signing operation', () => {
   it('clause 7.1.4 canonical bytes match the spec exactly', () => {

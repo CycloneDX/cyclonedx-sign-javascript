@@ -8,20 +8,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { generateKeyPairSync, type KeyObject } from 'node:crypto';
+import { generateKeyPairSync } from 'node:crypto';
 
 import { sign, verify } from '../src/jsf/index.js';
 import { JsfInputError } from '../src/errors.js';
 import type { JsonObject, JsonValue } from '../src/types.js';
-
-interface KeyPair {
-  privateKey: KeyObject;
-  publicKey: KeyObject;
-}
-
-function ecPair(): KeyPair {
-  return generateKeyPairSync('ec', { namedCurve: 'prime256v1' }) as unknown as KeyPair;
-}
+import { ecPair, type KeyPair } from './helpers.js';
 
 describe('JSF extensions: single mode', () => {
   it('declared extension values round-trip on the signaturecore', async () => {
@@ -34,10 +26,7 @@ describe('JSF extensions: single mode', () => {
           privateKey,
           extensionValues: {
             issuedAt: '2026-04-01T00:00:00Z',
-            'https://example.com/role': 'lead-assessor',
-          },
-        },
-      },
+            'https://example.com/role': 'lead-assessor' } } },
     );
     const sig = signed.signature as Record<string, JsonValue>;
     expect(sig.extensions).toEqual([
@@ -54,8 +43,7 @@ describe('JSF extensions: single mode', () => {
     ]);
     expect(result.signers[0]?.extensionValues).toEqual({
       issuedAt: '2026-04-01T00:00:00Z',
-      'https://example.com/role': 'lead-assessor',
-    });
+      'https://example.com/role': 'lead-assessor' });
   });
 
   it('rejects an extension name that collides with a JSF reserved word', async () => {
@@ -67,9 +55,7 @@ describe('JSF extensions: single mode', () => {
           signer: {
             algorithm: 'ES256',
             privateKey,
-            extensionValues: { chain: 'oops' },
-          },
-        },
+            extensionValues: { chain: 'oops' } } },
       ),
     ).rejects.toThrow(/reserved word/);
   });
@@ -81,8 +67,7 @@ describe('JSF extensions: single mode', () => {
         { x: 1 },
         {
           signer: { algorithm: 'ES256', privateKey, extensionValues: { ext1: 'a' } },
-          extensions: ['ext1', 'ext1'],
-        },
+          extensions: ['ext1', 'ext1'] },
       ),
     ).rejects.toThrow(/more than once/);
   });
@@ -95,9 +80,7 @@ describe('JSF extensions: single mode', () => {
         signer: {
           algorithm: 'ES256',
           privateKey,
-          extensionValues: { ext1: 'pristine' },
-        },
-      },
+          extensionValues: { ext1: 'pristine' } } },
     );
     const wire = JSON.parse(JSON.stringify(signed)) as JsonObject;
     (wire.signature as Record<string, JsonValue>).ext1 = 'tampered';
@@ -116,16 +99,13 @@ describe('JSF extensions: multi and chain optional-per-signer', () => {
           {
             algorithm: 'ES256',
             privateKey: a.privateKey,
-            extensionValues: { otherExt: 'Cool', extra: 1 },
-          },
+            extensionValues: { otherExt: 'Cool', extra: 1 } },
           {
             algorithm: 'ES256',
             privateKey: b.privateKey,
-            extensionValues: { otherExt: 'Other Data' },
-          },
+            extensionValues: { otherExt: 'Other Data' } },
         ],
-        mode: 'multi',
-      },
+        mode: 'multi' },
     );
     expect((signed.signature as { extensions: string[] }).extensions).toEqual(
       expect.arrayContaining(['otherExt', 'extra']),
@@ -134,11 +114,9 @@ describe('JSF extensions: multi and chain optional-per-signer', () => {
     expect(result.valid).toBe(true);
     expect(result.signers[0]?.extensionValues).toEqual({
       otherExt: 'Cool',
-      extra: 1,
-    });
+      extra: 1 });
     expect(result.signers[1]?.extensionValues).toEqual({
-      otherExt: 'Other Data',
-    });
+      otherExt: 'Other Data' });
   });
 
   it('chain: signer 0 has an extension, signer 1 inherits the wrapper-level list', async () => {
@@ -151,16 +129,14 @@ describe('JSF extensions: multi and chain optional-per-signer', () => {
           {
             algorithm: 'ES256',
             privateKey: a.privateKey,
-            extensionValues: { ext1: 'one' },
-          },
+            extensionValues: { ext1: 'one' } },
           {
             algorithm: 'ES256',
             privateKey: b.privateKey,
             // signer 1 has no extension values
           },
         ],
-        mode: 'chain',
-      },
+        mode: 'chain' },
     );
     const result = await verify(signed);
     expect(result.valid).toBe(true);
@@ -179,10 +155,8 @@ describe('JSF extensions: input validation', () => {
           signer: {
             algorithm: 'ES256',
             privateKey,
-            extensionValues: { undeclared: 1 },
-          },
-          extensions: ['ext1'],
-        },
+            extensionValues: { undeclared: 1 } },
+          extensions: ['ext1'] },
       ),
     ).rejects.toThrow(JsfInputError);
   });
@@ -192,8 +166,7 @@ describe('JSF extensions: input validation', () => {
     const signed = await sign(
       { x: 1 },
       {
-        signer: { algorithm: 'ES256', privateKey, extensionValues: { ext1: 'v' } },
-      },
+        signer: { algorithm: 'ES256', privateKey, extensionValues: { ext1: 'v' } } },
     );
     const wire = JSON.parse(JSON.stringify(signed)) as JsonObject;
     (wire.signature as Record<string, JsonValue>).extensions = ['signers'];

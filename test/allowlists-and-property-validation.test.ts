@@ -9,19 +9,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { generateKeyPairSync, type KeyObject } from 'node:crypto';
+import { generateKeyPairSync } from 'node:crypto';
 
 import { sign, verify } from '../src/jsf/index.js';
 import type { JsonObject, JsonValue } from '../src/types.js';
-
-interface KeyPair {
-  privateKey: KeyObject;
-  publicKey: KeyObject;
-}
-
-function ecPair(): KeyPair {
-  return generateKeyPairSync('ec', { namedCurve: 'prime256v1' }) as unknown as KeyPair;
-}
+import { ecPair, type KeyPair } from './helpers.js';
 
 describe('allowedExcludes', () => {
   it('lenient default accepts any excludes', async () => {
@@ -30,8 +22,7 @@ describe('allowedExcludes', () => {
       { a: 1, transient: 'x' },
       {
         signer: { algorithm: 'ES256', privateKey },
-        excludes: ['transient'],
-      },
+        excludes: ['transient'] },
     );
     const result = await verify(signed);
     expect(result.valid).toBe(true);
@@ -43,8 +34,7 @@ describe('allowedExcludes', () => {
       { a: 1, transient: 'x' },
       {
         signer: { algorithm: 'ES256', privateKey },
-        excludes: ['transient'],
-      },
+        excludes: ['transient'] },
     );
     const result = await verify(signed, { allowedExcludes: ['public'] });
     expect(result.valid).toBe(false);
@@ -57,8 +47,7 @@ describe('allowedExcludes', () => {
       { a: 1, transient: 'x' },
       {
         signer: { algorithm: 'ES256', privateKey },
-        excludes: ['transient'],
-      },
+        excludes: ['transient'] },
     );
     const result = await verify(signed, { allowedExcludes: ['transient', 'other'] });
     expect(result.valid).toBe(true);
@@ -74,9 +63,7 @@ describe('allowedExtensions', () => {
         signer: {
           algorithm: 'ES256',
           privateKey,
-          extensionValues: { ext1: 'v', ext2: 'w' },
-        },
-      },
+          extensionValues: { ext1: 'v', ext2: 'w' } } },
     );
     const result = await verify(signed, { allowedExtensions: ['ext1'] });
     expect(result.valid).toBe(false);
@@ -91,9 +78,7 @@ describe('allowedExtensions', () => {
         signer: {
           algorithm: 'ES256',
           privateKey,
-          extensionValues: { ext1: 'v', ext2: 'w' },
-        },
-      },
+          extensionValues: { ext1: 'v', ext2: 'w' } } },
     );
     const result = await verify(signed, { allowedExtensions: ['ext1', 'ext2'] });
     expect(result.valid).toBe(true);
@@ -125,8 +110,7 @@ describe('JSF § 6: undefined properties inside the signature object are rejecte
           { algorithm: 'ES256', privateKey: a.privateKey },
           { algorithm: 'ES256', privateKey: b.privateKey },
         ],
-        mode: 'multi',
-      },
+        mode: 'multi' },
     );
     const wire = JSON.parse(JSON.stringify(signed)) as JsonObject;
     (wire.signature as Record<string, JsonValue>).bogusWrapperProp = 1;
@@ -143,9 +127,7 @@ describe('JSF § 6: undefined properties inside the signature object are rejecte
         signer: {
           algorithm: 'ES256',
           privateKey,
-          extensionValues: { ext1: 'v' },
-        },
-      },
+          extensionValues: { ext1: 'v' } } },
     );
     const result = await verify(signed);
     expect(result.valid).toBe(true);

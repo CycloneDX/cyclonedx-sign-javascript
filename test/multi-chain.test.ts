@@ -10,38 +10,22 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { generateKeyPairSync, type KeyObject } from 'node:crypto';
+import { generateKeyPairSync } from 'node:crypto';
 
 import {
   sign,
   verify,
   appendChainSigner,
-  appendMultiSigner,
-} from '../src/jsf/index.js';
+  appendMultiSigner } from '../src/jsf/index.js';
 import { JsfChainOrderError } from '../src/errors.js';
 import type { JsonObject } from '../src/types.js';
-
-interface KeyPair {
-  privateKey: KeyObject;
-  publicKey: KeyObject;
-}
-
-function rsaPair(): KeyPair {
-  return generateKeyPairSync('rsa', { modulusLength: 2048 }) as unknown as KeyPair;
-}
-function ecPair(): KeyPair {
-  return generateKeyPairSync('ec', { namedCurve: 'prime256v1' }) as unknown as KeyPair;
-}
-function edPair(): KeyPair {
-  return (generateKeyPairSync as unknown as (k: string) => KeyPair)('ed25519');
-}
+import { ecPair, edPair, rsaPair, type KeyPair } from './helpers.js';
 
 function payload(): JsonObject {
   return {
     subject: 'doc-7',
     body: 'hello, world',
-    meta: { source: 'pipeline-A', timestamp: '2026-04-01T00:00:00Z' },
-  };
+    meta: { source: 'pipeline-A', timestamp: '2026-04-01T00:00:00Z' } };
 }
 
 describe('JSF multi-signature mode', () => {
@@ -53,8 +37,7 @@ describe('JSF multi-signature mode', () => {
         { algorithm: 'ES256', privateKey: a.privateKey },
         { algorithm: 'RS256', privateKey: b.privateKey },
       ],
-      mode: 'multi',
-    });
+      mode: 'multi' });
     expect(Array.isArray((signed.signature as { signers?: unknown[] }).signers)).toBe(true);
     const result = await verify(signed);
     expect(result.valid).toBe(true);
@@ -72,8 +55,7 @@ describe('JSF multi-signature mode', () => {
         { algorithm: 'ES256', privateKey: a.privateKey },
         { algorithm: 'ES256', privateKey: b.privateKey },
       ],
-      mode: 'multi',
-    });
+      mode: 'multi' });
     const wire = JSON.parse(JSON.stringify(signed)) as JsonObject;
     const arr = (wire.signature as { signers: { value: string }[] }).signers;
     const v = arr[0]!.value;
@@ -92,8 +74,7 @@ describe('JSF multi-signature mode', () => {
         { algorithm: 'ES256', privateKey: a.privateKey },
         { algorithm: 'ES256', privateKey: b.privateKey },
       ],
-      mode: 'multi',
-    });
+      mode: 'multi' });
     const wire = JSON.parse(JSON.stringify(signed)) as JsonObject;
     const arr = (wire.signature as { signers: { value: string }[] }).signers;
     arr[0]!.value = 'AAAA';
@@ -115,8 +96,7 @@ describe('JSF multi-signature mode', () => {
           { algorithm: 'ES256', privateKey: ecPair().privateKey },
         ],
         mode: 'multi',
-        excludes: ['transient'],
-      },
+        excludes: ['transient'] },
     );
     expect((signed.signature as { excludes: string[] }).excludes).toEqual(['transient']);
     const mutated = { ...signed, transient: 'changed' } as JsonObject;
@@ -134,8 +114,7 @@ describe('JSF signature chain mode', () => {
         { algorithm: 'ES256', privateKey: a.privateKey },
         { algorithm: 'RS256', privateKey: b.privateKey },
       ],
-      mode: 'chain',
-    });
+      mode: 'chain' });
     expect(Array.isArray((signed.signature as { chain?: unknown[] }).chain)).toBe(true);
     const result = await verify(signed);
     expect(result.valid).toBe(true);
@@ -153,8 +132,7 @@ describe('JSF signature chain mode', () => {
         { algorithm: 'ES256', privateKey: a.privateKey },
         { algorithm: 'ES256', privateKey: b.privateKey },
       ],
-      mode: 'chain',
-    });
+      mode: 'chain' });
     const wire = JSON.parse(JSON.stringify(signed)) as JsonObject;
     const arr = (wire.signature as { chain: { value: string }[] }).chain;
     const v = arr[0]!.value;
@@ -173,8 +151,7 @@ describe('JSF signature chain mode', () => {
         { algorithm: 'ES256', privateKey: a.privateKey },
         { algorithm: 'ES256', privateKey: b.privateKey },
       ],
-      mode: 'chain',
-    });
+      mode: 'chain' });
     const wire = JSON.parse(JSON.stringify(signed)) as JsonObject;
     const w = wire.signature as { chain: unknown[] };
     w.chain = w.chain.slice().reverse();
@@ -190,8 +167,7 @@ describe('appendChainSigner', () => {
     const c = edPair();
     const initial = await sign(payload(), {
       signers: [{ algorithm: 'ES256', privateKey: a.privateKey }],
-      mode: 'chain',
-    });
+      mode: 'chain' });
     const two = await appendChainSigner(
       initial,
       { algorithm: 'RS256', privateKey: b.privateKey },
@@ -211,8 +187,7 @@ describe('appendChainSigner', () => {
   it('rejects appendChainSigner on a single-mode envelope', async () => {
     const a = ecPair();
     const single = await sign(payload(), {
-      signer: { algorithm: 'ES256', privateKey: a.privateKey },
-    });
+      signer: { algorithm: 'ES256', privateKey: a.privateKey } });
     await expect(
       appendChainSigner(
         single,
@@ -226,8 +201,7 @@ describe('appendChainSigner', () => {
     const a = ecPair();
     const chain = await sign(payload(), {
       signers: [{ algorithm: 'ES256', privateKey: a.privateKey }],
-      mode: 'chain',
-    });
+      mode: 'chain' });
     await expect(
       appendMultiSigner(
         chain,
@@ -242,8 +216,7 @@ describe('appendChainSigner', () => {
     const b = ecPair();
     const initial = await sign(payload(), {
       signers: [{ algorithm: 'ES256', privateKey: a.privateKey }],
-      mode: 'multi',
-    });
+      mode: 'multi' });
     const both = await appendMultiSigner(
       initial,
       { algorithm: 'ES256', privateKey: b.privateKey },
@@ -258,8 +231,7 @@ describe('appendChainSigner', () => {
     const a = ecPair();
     const initial = await sign(payload(), {
       signers: [{ algorithm: 'ES256', privateKey: a.privateKey }],
-      mode: 'chain',
-    });
+      mode: 'chain' });
     await expect(
       appendChainSigner(initial, { algorithm: 'ES256', privateKey: ecPair().privateKey }),
     ).rejects.toThrow(/publicKeys|skipVerifyExisting/);
@@ -273,8 +245,7 @@ describe('appendChainSigner', () => {
         { algorithm: 'ES256', privateKey: a.privateKey },
         { algorithm: 'ES256', privateKey: b.privateKey },
       ],
-      mode: 'multi',
-    });
+      mode: 'multi' });
     await expect(
       appendMultiSigner(
         initial,
@@ -291,8 +262,7 @@ describe('appendChainSigner verify-first defense (CWE-345 / CWE-347)', () => {
     const b = ecPair();
     const initial = await sign(payload(), {
       signers: [{ algorithm: 'ES256', privateKey: a.privateKey }],
-      mode: 'chain',
-    });
+      mode: 'chain' });
     // Attacker tampers with the existing signer's value before the
     // legitimate counter-signer attempts to append.
     const tampered = JSON.parse(JSON.stringify(initial)) as JsonObject;
@@ -324,8 +294,7 @@ describe('appendChainSigner verify-first defense (CWE-345 / CWE-347)', () => {
     const b = ecPair();
     const initial = await sign(payload(), {
       signers: [{ algorithm: 'ES256', privateKey: a.privateKey }],
-      mode: 'multi',
-    });
+      mode: 'multi' });
     const tampered = JSON.parse(JSON.stringify(initial)) as JsonObject;
     const arr = (tampered.signature as { signers: { value: string }[] }).signers;
     const v = arr[0]!.value;
@@ -349,8 +318,7 @@ describe('appendChainSigner verify-first defense (CWE-345 / CWE-347)', () => {
     const eve = ecPair(); // attacker
     const fakeInitial = await sign(payload(), {
       signers: [{ algorithm: 'ES256', privateKey: eve.privateKey }],
-      mode: 'chain',
-    });
+      mode: 'chain' });
     const b = ecPair(); // legitimate counter-signer
     // Caller provides the genuine signer-0 trusted key (a.publicKey),
     // not the attacker's embedded one. Verify-first fails.
@@ -368,8 +336,7 @@ describe('appendChainSigner verify-first defense (CWE-345 / CWE-347)', () => {
     const b = ecPair();
     const initial = await sign(payload(), {
       signers: [{ algorithm: 'ES256', privateKey: a.privateKey }],
-      mode: 'chain',
-    });
+      mode: 'chain' });
     const tampered = JSON.parse(JSON.stringify(initial)) as JsonObject;
     const arr = (tampered.signature as { chain: { value: string }[] }).chain;
     const v = arr[0]!.value;
@@ -399,11 +366,9 @@ describe('appendChainSigner verify-first defense (CWE-345 / CWE-347)', () => {
           algorithm: 'ES256',
           privateKey: a.privateKey,
           publicKey: false,
-          keyId: 'a',
-        },
+          keyId: 'a' },
       ],
-      mode: 'chain',
-    });
+      mode: 'chain' });
     // Without publicKeys override, append refuses up front under the
     // strict verify-first posture (no embedded-key fallback allowed).
     await expect(
@@ -417,8 +382,7 @@ describe('appendChainSigner verify-first defense (CWE-345 / CWE-347)', () => {
       { publicKeys: new Map([[0, a.publicKey]]) },
     );
     const r = await verify(grown, {
-      publicKeys: new Map([[0, a.publicKey]]),
-    });
+      publicKeys: new Map([[0, a.publicKey]]) });
     expect(r.valid).toBe(true);
   });
 });

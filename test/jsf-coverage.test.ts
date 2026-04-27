@@ -27,17 +27,7 @@ import {
 } from '../src/jsf/index.js';
 import { JsfEnvelopeError, JsfInputError } from '../src/errors.js';
 import type { JsonObject, JsonValue } from '../src/types.js';
-
-interface KeyPair {
-  privateKey: KeyObject;
-  publicKey: KeyObject;
-}
-function ecPair(): KeyPair {
-  return generateKeyPairSync('ec', { namedCurve: 'prime256v1' }) as unknown as KeyPair;
-}
-function rsaPair(): KeyPair {
-  return generateKeyPairSync('rsa', { modulusLength: 2048 }) as unknown as KeyPair;
-}
+import { ecPair, rsaPair, type KeyPair } from './helpers.js';
 
 // --- 1. HMAC in multi and chain modes ----------------------------------
 

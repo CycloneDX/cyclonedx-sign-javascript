@@ -123,8 +123,7 @@ describe('JCS', () => {
       const input = {
         numbers: [333333333.33333329, 1e30, 4.5, 0.002, 1e-27],
         string: 'Test',
-        literals: [null, true, false],
-      };
+        literals: [null, true, false] };
       const result = text(input);
       expect(result).toBe(
         '{"literals":[null,true,false],' +

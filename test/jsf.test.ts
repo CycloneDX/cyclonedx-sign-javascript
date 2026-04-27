@@ -22,21 +22,7 @@ import {
 } from '../src/errors.js';
 import type { JsonObject } from '../src/types.js';
 import type { JsfAlgorithm } from '../src/jsf/types.js';
-
-interface KeyPair {
-  privateKey: KeyObject;
-  publicKey: KeyObject;
-}
-
-function rsaPair(): KeyPair {
-  return generateKeyPairSync('rsa', { modulusLength: 2048 }) as unknown as KeyPair;
-}
-function ecPair(namedCurve: 'prime256v1' | 'secp384r1' | 'secp521r1'): KeyPair {
-  return generateKeyPairSync('ec', { namedCurve }) as unknown as KeyPair;
-}
-function edPair(kind: 'ed25519' | 'ed448'): KeyPair {
-  return (generateKeyPairSync as unknown as (k: string) => KeyPair)(kind);
-}
+import { ecPair, edPair, rsaPair, type KeyPair } from './helpers.js';
 
 function samplePayload(): JsonObject {
   return {

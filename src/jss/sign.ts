@@ -28,7 +28,7 @@ import {
 } from './binding.js';
 import { isRegisteredAlgorithm, signHash, verifyHash } from './algorithms.js';
 import { hashBytes, isRegisteredHashAlgorithm } from './hash.js';
-import { publicKeyFromPemBody, privateKeyFromPem } from './pem.js';
+import { publicKeyFromPemBody, toPrivateKey, toPublicKey } from './pem.js';
 import type {
   JssCountersignOptions,
   JssSignerInput,
@@ -692,18 +692,6 @@ function extractExisting(payload: JsonObject, signatureProperty: string): JsonOb
   return [...(slot as JsonObject[])];
 }
 
-function toPrivateKey(input: KeyInput): KeyObject {
-  if (input instanceof KeyObject) return input;
-  if (typeof input === 'string') return privateKeyFromPem(input);
-  if (Buffer.isBuffer(input) || input instanceof Uint8Array) {
-    return createPrivateKey({ key: Buffer.from(input), format: 'der', type: 'pkcs8' });
-  }
-  if (typeof input === 'object' && 'kty' in (input as Record<string, unknown>)) {
-    return createPrivateKey({ key: input as unknown as Record<string, unknown>, format: 'jwk' });
-  }
-  throw new JssInputError('Unsupported private key input for JSS');
-}
-
 function resolveSignerKey(
   desc: JssSignerDescriptor,
   options: JssVerifyOptions,
@@ -712,10 +700,10 @@ function resolveSignerKey(
   // Caller-supplied per-signer override
   if (options.publicKeys) {
     const k = options.publicKeys.get(index);
-    if (k !== undefined) return toPublicKeyObject(k);
+    if (k !== undefined) return toPublicKey(k);
   }
   // Caller-supplied global override
-  if (options.publicKey !== undefined) return toPublicKeyObject(options.publicKey);
+  if (options.publicKey !== undefined) return toPublicKey(options.publicKey);
 
   // Embedded `public_key` (PEM body)
   const ext = desc.extensionValues ?? {};
@@ -735,22 +723,3 @@ function resolveSignerKey(
   );
 }
 
-function toPublicKeyObject(input: KeyInput): KeyObject {
-  if (input instanceof KeyObject) {
-    return input.type === 'private' ? createPublicKey(input) : input;
-  }
-  if (typeof input === 'string') {
-    const trimmed = input.trim();
-    if (trimmed.startsWith('-----BEGIN ')) {
-      return createPublicKey({ key: trimmed, format: 'pem' });
-    }
-    return publicKeyFromPemBody(trimmed);
-  }
-  if (Buffer.isBuffer(input) || input instanceof Uint8Array) {
-    return createPublicKey({ key: Buffer.from(input), format: 'der', type: 'spki' });
-  }
-  if (typeof input === 'object' && 'kty' in (input as Record<string, unknown>)) {
-    return createPublicKey({ key: input as unknown as Record<string, unknown>, format: 'jwk' });
-  }
-  throw new JssInputError('Unsupported public key input for JSS');
-}

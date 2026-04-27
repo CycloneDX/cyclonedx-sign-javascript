@@ -39,8 +39,13 @@ import {
   verifyHash,
 } from './algorithms.js';
 import { hashBytes, isRegisteredHashAlgorithm } from './hash.js';
-import { pemBodyFromPublicKey, publicKeyFromPemBody, privateKeyFromPem } from './pem.js';
-import { X509Certificate, createPrivateKey, createPublicKey, KeyObject } from 'node:crypto';
+import {
+  pemBodyFromPublicKey,
+  publicKeyFromPemBody,
+  toPrivateKey,
+  toPublicKey,
+} from './pem.js';
+import { X509Certificate, createPublicKey, KeyObject } from 'node:crypto';
 
 /** Properties JSS reserves on a signaturecore (X.590 § 6.2.1). */
 const JSS_RESERVED = new Set([
@@ -231,7 +236,7 @@ export class JssBinding {
       throw new JssInputError(`Unsupported JSS hash algorithm: ${hashAlgorithm}`);
     }
     const algorithm = input.algorithm;
-    const privateKey = toPrivateKeyObject(input.privateKey);
+    const privateKey = toPrivateKey(input.privateKey);
     return {
       sign: async (canonicalBytes) => {
         const digest = hashBytes(hashAlgorithm, canonicalBytes);
@@ -327,51 +332,16 @@ export function deriveEmbeddedPublicKeyPemBody(
   if (publicKeyInput === false) return null;
   if (publicKeyInput === undefined || publicKeyInput === 'auto') {
     if (!privateKeyInput) return null;
-    const priv = toPrivateKeyObject(privateKeyInput);
+    const priv = toPrivateKey(privateKeyInput);
     const pub = createPublicKey(priv);
     return pemBodyFromPublicKey(pub);
   }
   // Explicit override: convert any KeyInput to a PEM body.
-  return pemBodyFromPublicKey(toPublicKeyObject(publicKeyInput));
-}
-
-function toPrivateKeyObject(input: KeyInput): KeyObject {
-  if (input instanceof KeyObject) return input;
-  if (typeof input === 'string') return privateKeyFromPem(input);
-  if (Buffer.isBuffer(input) || input instanceof Uint8Array) {
-    // Treat as raw PKCS#8 DER bytes (rare but supported).
-    return createPrivateKey({ key: Buffer.from(input), format: 'der', type: 'pkcs8' });
-  }
-  // JWK
-  if (typeof input === 'object' && 'kty' in (input as Record<string, unknown>)) {
-    return createPrivateKey({ key: input as unknown as Record<string, unknown>, format: 'jwk' });
-  }
-  throw new JssInputError('Unsupported private key input for JSS');
-}
-
-function toPublicKeyObject(input: KeyInput): KeyObject {
-  if (input instanceof KeyObject) {
-    return input.type === 'private' ? createPublicKey(input) : input;
-  }
-  if (typeof input === 'string') {
-    const trimmed = input.trim();
-    if (trimmed.startsWith('-----BEGIN ')) {
-      return createPublicKey({ key: trimmed, format: 'pem' });
-    }
-    // Treat as PEM body.
-    return publicKeyFromPemBody(trimmed);
-  }
-  if (Buffer.isBuffer(input) || input instanceof Uint8Array) {
-    return createPublicKey({ key: Buffer.from(input), format: 'der', type: 'spki' });
-  }
-  if (typeof input === 'object' && 'kty' in (input as Record<string, unknown>)) {
-    return createPublicKey({ key: input as unknown as Record<string, unknown>, format: 'jwk' });
-  }
-  throw new JssInputError('Unsupported public key input for JSS');
+  return pemBodyFromPublicKey(toPublicKey(publicKeyInput));
 }
 
 function resolveVerifyingKey(input: JssVerifierKeyInput): KeyObject {
-  if (input.publicKey !== undefined) return toPublicKeyObject(input.publicKey);
+  if (input.publicKey !== undefined) return toPublicKey(input.publicKey);
   // No JWK embedded for JSS; instead the JSS sign path provides
   // `embeddedPublicKey` as a PEM body string.
   if (typeof (input as { embeddedPemBody?: string }).embeddedPemBody === 'string') {

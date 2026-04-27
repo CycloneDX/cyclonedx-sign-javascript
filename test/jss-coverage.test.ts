@@ -22,17 +22,6 @@ import {
 import { JssEnvelopeError, JssInputError } from '../src/errors.js';
 import type { JsonObject, JsonValue } from '../src/types.js';
 
-interface KeyPair {
-  privateKey: KeyObject;
-  publicKey: KeyObject;
-}
-function edPair(kind: 'ed25519' | 'ed448' = 'ed25519'): KeyPair {
-  return (generateKeyPairSync as unknown as (k: string) => KeyPair)(kind);
-}
-function rsaPair(): KeyPair {
-  return generateKeyPairSync('rsa', { modulusLength: 2048 }) as unknown as KeyPair;
-}
-
 // ---------------------------------------------------------------------------
 // 1. public_cert_chain round-trip is exercised below via the committed
 //    p256certpath.pem leaf, which X509Certificate can parse. Generating a
@@ -414,6 +403,7 @@ describe('verify rejects malformed wire', () => {
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { edPair, rsaPair, type KeyPair } from './helpers.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 describe('public_cert_chain round-trip with a committed leaf cert', () => {
