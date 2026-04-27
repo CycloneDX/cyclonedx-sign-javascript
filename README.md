@@ -10,7 +10,7 @@
 
 Standalone TypeScript implementation of the JSON signing formats used by CycloneDX.
 
-* **JSF** (JSON Signature Format, 0.82) for CycloneDX 1.x. Full conformance: single, multi-signature, signature-chain, `excludes`, `extensions`, acceptance allowlists, JSF § 6 property validation.
+* **JSF** (JSON Signature Format, 0.82) for CycloneDX 1.x.
 * **JSS** (JSON Signature Schema, X.590) for CycloneDX 2.x. Stub.
 * **JCS** (JSON Canonicalization Scheme, RFC 8785) used by both.
 
