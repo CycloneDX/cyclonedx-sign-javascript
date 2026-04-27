@@ -16,8 +16,13 @@ export {
   isRegisteredAlgorithm as isRegisteredJssAlgorithm,
   signHash as signJssHash,
   verifyHash as verifyJssHash,
+  JssAlgorithms,
 } from './algorithms.js';
-export { isRegisteredHashAlgorithm as isRegisteredJssHashAlgorithm, hashBytes as jssHashBytes } from './hash.js';
+export {
+  isRegisteredHashAlgorithm as isRegisteredJssHashAlgorithm,
+  hashBytes as jssHashBytes,
+  JssHashAlgorithms,
+} from './hash.js';
 export {
   publicKeyFromPemBody,
   pemBodyFromPublicKey,

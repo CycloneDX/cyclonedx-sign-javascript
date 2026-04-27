@@ -40,7 +40,7 @@ import {
 import { p256, p384, p521 } from '@noble/curves/nist.js';
 import { JssInputError } from '../errors.js';
 import type { JssHashAlgorithm } from './hash.js';
-import { hashLength, isRegisteredHashAlgorithm } from './hash.js';
+import { JssHashAlgorithms, hashLength, isRegisteredHashAlgorithm } from './hash.js';
 
 export type JssAlgorithm =
   | 'RS256' | 'RS384' | 'RS512'
@@ -48,12 +48,32 @@ export type JssAlgorithm =
   | 'ES256' | 'ES384' | 'ES512'
   | 'Ed25519' | 'Ed448';
 
-const REGISTERED: ReadonlySet<JssAlgorithm> = new Set<JssAlgorithm>([
-  'RS256', 'RS384', 'RS512',
-  'PS256', 'PS384', 'PS512',
-  'ES256', 'ES384', 'ES512',
-  'Ed25519', 'Ed448',
-]);
+/**
+ * Named runtime constants for every JSS algorithm. Callers who prefer
+ * dot-access over raw string literals can write
+ * `JssAlgorithms.Ed25519` instead of `'Ed25519'`. The values are the
+ * exact X.590 / JWA wire identifiers; the type is `JssAlgorithm`, so
+ * passing one of these into the sign / verify options is fully
+ * type-safe. This object is also the single source of truth for the
+ * registered-algorithm set the rest of this module dispatches on.
+ */
+export const JssAlgorithms = {
+  RS256: 'RS256',
+  RS384: 'RS384',
+  RS512: 'RS512',
+  PS256: 'PS256',
+  PS384: 'PS384',
+  PS512: 'PS512',
+  ES256: 'ES256',
+  ES384: 'ES384',
+  ES512: 'ES512',
+  Ed25519: 'Ed25519',
+  Ed448: 'Ed448',
+} as const satisfies Record<string, JssAlgorithm>;
+
+const REGISTERED: ReadonlySet<JssAlgorithm> = new Set<JssAlgorithm>(
+  Object.values(JssAlgorithms),
+);
 
 export function isRegisteredAlgorithm(name: string): name is JssAlgorithm {
   return REGISTERED.has(name as JssAlgorithm);
@@ -72,7 +92,7 @@ export function signHash(
   ensureHashRegistered(hashAlgorithm);
   ensureHashLength(hashAlgorithm as JssHashAlgorithm, hash);
 
-  if (algorithm === 'Ed25519' || algorithm === 'Ed448') {
+  if (algorithm === JssAlgorithms.Ed25519 || algorithm === JssAlgorithms.Ed448) {
     return signEdDsa(algorithm, hash, privateKey);
   }
   if (algorithm.startsWith('RS')) {
@@ -81,7 +101,11 @@ export function signHash(
   if (algorithm.startsWith('PS')) {
     return signRsaPss(hashAlgorithm as JssHashAlgorithm, hash, privateKey);
   }
-  if (algorithm === 'ES256' || algorithm === 'ES384' || algorithm === 'ES512') {
+  if (
+    algorithm === JssAlgorithms.ES256 ||
+    algorithm === JssAlgorithms.ES384 ||
+    algorithm === JssAlgorithms.ES512
+  ) {
     return signEcdsa(algorithm, hash, privateKey);
   }
   /* c8 ignore next */
@@ -102,7 +126,7 @@ export function verifyHash(
   ensureHashRegistered(hashAlgorithm);
   ensureHashLength(hashAlgorithm as JssHashAlgorithm, hash);
 
-  if (algorithm === 'Ed25519' || algorithm === 'Ed448') {
+  if (algorithm === JssAlgorithms.Ed25519 || algorithm === JssAlgorithms.Ed448) {
     return verifyEdDsa(algorithm, hash, signature, publicKey);
   }
   if (algorithm.startsWith('RS')) {
@@ -111,7 +135,11 @@ export function verifyHash(
   if (algorithm.startsWith('PS')) {
     return verifyRsaPss(hashAlgorithm as JssHashAlgorithm, hash, signature, publicKey);
   }
-  if (algorithm === 'ES256' || algorithm === 'ES384' || algorithm === 'ES512') {
+  if (
+    algorithm === JssAlgorithms.ES256 ||
+    algorithm === JssAlgorithms.ES384 ||
+    algorithm === JssAlgorithms.ES512
+  ) {
     return verifyEcdsa(algorithm, hash, signature, publicKey);
   }
   /* c8 ignore next */
@@ -362,18 +390,20 @@ function rsaModulusBits(key: KeyObject): number {
 // envelope contract, so accepting both forms is interop-correct.
 
 type EcdsaCurve = typeof p256 | typeof p384 | typeof p521;
-const ECDSA_CURVES: Record<'ES256' | 'ES384' | 'ES512', EcdsaCurve> = {
-  ES256: p256,
-  ES384: p384,
-  ES512: p521,
+type EcdsaAlgorithm = typeof JssAlgorithms.ES256 | typeof JssAlgorithms.ES384 | typeof JssAlgorithms.ES512;
+
+const ECDSA_CURVES: Record<EcdsaAlgorithm, EcdsaCurve> = {
+  [JssAlgorithms.ES256]: p256,
+  [JssAlgorithms.ES384]: p384,
+  [JssAlgorithms.ES512]: p521,
 };
-const ECDSA_FIELD_BYTES: Record<'ES256' | 'ES384' | 'ES512', number> = {
-  ES256: 32,
-  ES384: 48,
-  ES512: 66,
+const ECDSA_FIELD_BYTES: Record<EcdsaAlgorithm, number> = {
+  [JssAlgorithms.ES256]: 32,
+  [JssAlgorithms.ES384]: 48,
+  [JssAlgorithms.ES512]: 66,
 };
 
-function signEcdsa(algorithm: 'ES256' | 'ES384' | 'ES512', hash: Buffer, privateKey: KeyObject): Buffer {
+function signEcdsa(algorithm: EcdsaAlgorithm, hash: Buffer, privateKey: KeyObject): Buffer {
   // eslint-disable-next-line security/detect-object-injection -- algorithm narrowed to a literal union of three known keys
   const curve = ECDSA_CURVES[algorithm];
   const expectedField = ECDSA_FIELD_BYTES[algorithm];
@@ -389,7 +419,7 @@ function signEcdsa(algorithm: 'ES256' | 'ES384' | 'ES512', hash: Buffer, private
 }
 
 function verifyEcdsa(
-  algorithm: 'ES256' | 'ES384' | 'ES512',
+  algorithm: EcdsaAlgorithm,
   hash: Buffer,
   signature: Buffer,
   publicKey: KeyObject,
@@ -447,7 +477,12 @@ function ecdsaPublicPointUncompressed(key: KeyObject, algorithm: string, expecte
 }
 
 function ensureCurve(crv: string | undefined, algorithm: string): void {
-  const want = algorithm === 'ES256' ? 'P-256' : algorithm === 'ES384' ? 'P-384' : 'P-521';
+  const want =
+    algorithm === JssAlgorithms.ES256
+      ? 'P-256'
+      : algorithm === JssAlgorithms.ES384
+        ? 'P-384'
+        : 'P-521';
   if (crv !== want) {
     throw new JssInputError(
       `Algorithm ${algorithm} requires curve ${want}; got ${String(crv)}`,
@@ -463,11 +498,15 @@ function base64UrlToBuffer(s: string): Buffer {
 
 // -- low-level helpers --------------------------------------------------------
 
+const NODE_HASH_NAMES: Record<JssHashAlgorithm, string> = {
+  [JssHashAlgorithms.SHA_256]: 'sha256',
+  [JssHashAlgorithms.SHA_384]: 'sha384',
+  [JssHashAlgorithms.SHA_512]: 'sha512',
+};
+
 function hashOf(name: JssHashAlgorithm, data: Buffer): Buffer {
-  // eslint-disable-next-line security/detect-object-injection -- `name` is a JssHashAlgorithm literal narrowed by the caller.
-  return createHash({ 'sha-256': 'sha256', 'sha-384': 'sha384', 'sha-512': 'sha512' }[name])
-    .update(data)
-    .digest();
+  // eslint-disable-next-line security/detect-object-injection -- `name` is a JssHashAlgorithm literal narrowed by the caller; NODE_HASH_NAMES is keyed by the same.
+  return createHash(NODE_HASH_NAMES[name]).update(data).digest();
 }
 
 function xor(a: Buffer, b: Buffer): Buffer {

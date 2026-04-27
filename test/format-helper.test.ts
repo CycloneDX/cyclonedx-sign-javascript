@@ -34,16 +34,20 @@ function ecPair(): KeyPair {
 }
 
 describe('sign and verify', () => {
-  it('defaults to V1 (JSF) when cyclonedxVersion is omitted', async () => {
+  it('throws when cyclonedxVersion is omitted on sign (no default)', async () => {
     const { privateKey } = ecPair();
-    const signed = await sign(
-      { hello: 'world' },
-      { signer: { algorithm: 'ES256', privateKey } },
-    );
-    expect(signed.signature).toBeDefined();
-    const result = await verify(signed);
-    expect(result.valid).toBe(true);
-    expect(result.cyclonedxVersion).toBe(CycloneDxMajor.V1);
+    await expect(
+      sign(
+        { hello: 'world' },
+        // @ts-expect-error -- intentionally omitting required cyclonedxVersion to assert the runtime guard.
+        { signer: { algorithm: 'ES256', privateKey } },
+      ),
+    ).rejects.toThrow(/cyclonedxVersion/);
+  });
+
+  it('throws on verify when neither caller nor detection can determine the version', async () => {
+    // Plain JSON with nothing signature-shaped under the signature property.
+    await expect(verify({ hello: 'world' })).rejects.toThrow(/cyclonedxVersion/);
   });
 
   it('routes to JSF when cyclonedxVersion is V1', async () => {
@@ -91,9 +95,27 @@ describe('sign and verify', () => {
 
   it('detects JSF on verify without an explicit version', async () => {
     const { privateKey } = ecPair();
-    const signed = await sign({ a: 1 }, { signer: { algorithm: 'ES256', privateKey } });
+    const signed = await sign(
+      { a: 1 },
+      { cyclonedxVersion: CycloneDxMajor.V1, signer: { algorithm: 'ES256', privateKey } },
+    );
+    // No cyclonedxVersion on verify: detection must recognize the JSF envelope shape.
     const result = await verify(signed);
     expect(result.cyclonedxVersion).toBe(CycloneDxMajor.V1);
+    expect(result.valid).toBe(true);
+  });
+
+  it('detects JSS on verify without an explicit version', async () => {
+    const ed = generateKeyPairSync('ed25519') as unknown as { privateKey: KeyObject; publicKey: KeyObject };
+    const signed = await sign(
+      { a: 1 },
+      {
+        cyclonedxVersion: CycloneDxMajor.V2,
+        signer: { algorithm: 'Ed25519', privateKey: ed.privateKey, public_key: 'auto' },
+      },
+    );
+    const result = await verify(signed);
+    expect(result.cyclonedxVersion).toBe(CycloneDxMajor.V2);
     expect(result.valid).toBe(true);
   });
 });
@@ -162,7 +184,10 @@ describe('signing CycloneDX shapes', () => {
 describe('format detection and conversion helpers', () => {
   it('detectFormat returns jsf for a JSF envelope', async () => {
     const { privateKey } = ecPair();
-    const signed = await sign({ a: 1 }, { signer: { algorithm: 'ES256', privateKey } });
+    const signed = await sign(
+      { a: 1 },
+      { cyclonedxVersion: CycloneDxMajor.V1, signer: { algorithm: 'ES256', privateKey } },
+    );
     expect(detectFormat(signed)).toBe('jsf');
   });
 

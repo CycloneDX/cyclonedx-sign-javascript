@@ -102,6 +102,31 @@ export function isRegisteredAlgorithm(algorithm: string): algorithm is JsfAlgori
 }
 
 /**
+ * Named runtime constants for every JSF algorithm. Callers who prefer
+ * dot-access over raw string literals can write
+ * `JsfAlgorithms.ES256` instead of `'ES256'`. The values are the
+ * exact JWA / JSF wire identifiers; the type is `JsfAlgorithm`, so
+ * passing one of these into the sign / verify options is fully
+ * type-safe.
+ */
+export const JsfAlgorithms = {
+  RS256: 'RS256',
+  RS384: 'RS384',
+  RS512: 'RS512',
+  PS256: 'PS256',
+  PS384: 'PS384',
+  PS512: 'PS512',
+  ES256: 'ES256',
+  ES384: 'ES384',
+  ES512: 'ES512',
+  Ed25519: 'Ed25519',
+  Ed448: 'Ed448',
+  HS256: 'HS256',
+  HS384: 'HS384',
+  HS512: 'HS512',
+} as const satisfies Record<string, JsfAlgorithm>;
+
+/**
  * The JSF asymmetric algorithms suitable for signatory use in
  * CycloneDX declarations.affirmation.signatories[].signature and for
  * the enveloping declarations.signature and top level document
@@ -111,10 +136,10 @@ export function isRegisteredAlgorithm(algorithm: string): algorithm is JsfAlgori
  * the signer.
  */
 export const JSF_ASYMMETRIC_ALGORITHMS = [
-  'RS256', 'RS384', 'RS512',
-  'PS256', 'PS384', 'PS512',
-  'ES256', 'ES384', 'ES512',
-  'Ed25519', 'Ed448',
+  JsfAlgorithms.RS256, JsfAlgorithms.RS384, JsfAlgorithms.RS512,
+  JsfAlgorithms.PS256, JsfAlgorithms.PS384, JsfAlgorithms.PS512,
+  JsfAlgorithms.ES256, JsfAlgorithms.ES384, JsfAlgorithms.ES512,
+  JsfAlgorithms.Ed25519, JsfAlgorithms.Ed448,
 ] as const satisfies readonly JsfAlgorithm[];
 
 export type JsfAsymmetricAlgorithm = typeof JSF_ASYMMETRIC_ALGORITHMS[number];

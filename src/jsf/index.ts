@@ -24,6 +24,7 @@ export {
   isAsymmetricAlgorithm,
   signBytes,
   verifyBytes,
+  JsfAlgorithms,
   JSF_ASYMMETRIC_ALGORITHMS,
 } from './algorithms.js';
 

@@ -18,16 +18,29 @@ import { JssInputError } from '../errors.js';
 
 export type JssHashAlgorithm = 'sha-256' | 'sha-384' | 'sha-512';
 
+/**
+ * Named runtime constants for the JSS hash algorithms. Callers who
+ * prefer dot-access over the hyphenated wire string can write
+ * `JssHashAlgorithms.SHA_256` instead of `'sha-256'`. The values are
+ * the exact X.590 / IANA wire identifiers (lower-case, hyphenated)
+ * and the type is `JssHashAlgorithm`.
+ */
+export const JssHashAlgorithms = {
+  SHA_256: 'sha-256',
+  SHA_384: 'sha-384',
+  SHA_512: 'sha-512',
+} as const satisfies Record<string, JssHashAlgorithm>;
+
 const HASH_NAMES = {
-  'sha-256': 'sha256',
-  'sha-384': 'sha384',
-  'sha-512': 'sha512',
+  [JssHashAlgorithms.SHA_256]: 'sha256',
+  [JssHashAlgorithms.SHA_384]: 'sha384',
+  [JssHashAlgorithms.SHA_512]: 'sha512',
 } as const satisfies Record<JssHashAlgorithm, string>;
 
 const HASH_LENGTHS: Record<JssHashAlgorithm, number> = {
-  'sha-256': 32,
-  'sha-384': 48,
-  'sha-512': 64,
+  [JssHashAlgorithms.SHA_256]: 32,
+  [JssHashAlgorithms.SHA_384]: 48,
+  [JssHashAlgorithms.SHA_512]: 64,
 };
 
 export function isRegisteredHashAlgorithm(name: string): name is JssHashAlgorithm {
