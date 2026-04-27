@@ -649,7 +649,11 @@ Catch `SignatureError` to trap everything the package throws. Catch a subtree (`
 
 ## License
 
-Apache License 2.0. See [LICENSE][license_file].
+Permission to modify and redistribute is granted under the terms of the Apache License 2.0. See the full text of the [LICENSE][license_file] for details.
+
+## Copyright
+
+Copyright (c) OWASP Foundation. All Rights Reserved.
 
 ## Related specifications
 
