@@ -139,8 +139,23 @@ jobs:
         run: npm install --no-audit --no-fund --no-progress
       - name: typecheck
         run: npm run typecheck
-      - name: run tests
-        run: npm test
+      - name: run tests with coverage
+        # Use the coverage variant so we can upload an lcov report to
+        # Codacy below. The release-driven push of the bump commit
+        # uses the default GITHUB_TOKEN, which (per GitHub's
+        # documented infinite-loop guard) does not trigger CI on
+        # main. Without an in-release upload Codacy sees the new
+        # commit with no coverage data and reports 0%.
+        run: npm run test:coverage
+      - name: Upload coverage to Codacy
+        # Same Codacy upload as ci.yml; the workflow runs only on
+        # workflow_dispatch so the CODACY_PROJECT_TOKEN secret is
+        # always available (no fork-PR fallback needed here).
+        # see https://github.com/codacy/codacy-coverage-reporter-action
+        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: coverage/lcov.info
 
   publish-registry:
     needs:
