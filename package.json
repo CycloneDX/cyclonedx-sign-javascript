@@ -1,6 +1,6 @@
 {
   "name": "@cyclonedx/sign",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Standalone TypeScript implementation of JSON Signature Format (JSF), JSON Signature Schema (JSS, X.590), and the JSON Canonicalization Scheme (JCS, RFC 8785). Single library covering CycloneDX 1.x (JSF) and 2.x (JSS). The only runtime dependency beyond Node crypto is @noble/curves, used solely for JSS ECDSA pre-hashed signing.",
   "license": "Apache-2.0",
   "type": "module",
