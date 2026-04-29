@@ -29,10 +29,12 @@ Copyright (c) OWASP Foundation. All Rights Reserved.
  *
  * The hash names are spelled in the spec's exact lowercase-with-hyphen
  * form and the registry comparison is case-sensitive (X.590 clause
- * 6.2.1).
+ * 6.2.1). Hashing itself is delegated to the active crypto backend
+ * (node:crypto on Node, crypto.subtle on Web) so that this module
+ * stays runtime-neutral.
  */
 
-import { createHash } from 'node:crypto';
+import { backend } from '#crypto-backend';
 import { JssInputError } from '../errors.js';
 
 export type JssHashAlgorithm = 'sha-256' | 'sha-384' | 'sha-512';
@@ -50,12 +52,6 @@ export const JssHashAlgorithms = {
   SHA_512: 'sha-512',
 } as const satisfies Record<string, JssHashAlgorithm>;
 
-const HASH_NAMES = {
-  [JssHashAlgorithms.SHA_256]: 'sha256',
-  [JssHashAlgorithms.SHA_384]: 'sha384',
-  [JssHashAlgorithms.SHA_512]: 'sha512',
-} as const satisfies Record<JssHashAlgorithm, string>;
-
 const HASH_LENGTHS: Record<JssHashAlgorithm, number> = {
   [JssHashAlgorithms.SHA_256]: 32,
   [JssHashAlgorithms.SHA_384]: 48,
@@ -63,7 +59,7 @@ const HASH_LENGTHS: Record<JssHashAlgorithm, number> = {
 };
 
 export function isRegisteredHashAlgorithm(name: string): name is JssHashAlgorithm {
-  return Object.prototype.hasOwnProperty.call(HASH_NAMES, name);
+  return Object.prototype.hasOwnProperty.call(HASH_LENGTHS, name);
 }
 
 export function hashLength(name: JssHashAlgorithm): number {
@@ -71,11 +67,17 @@ export function hashLength(name: JssHashAlgorithm): number {
   return HASH_LENGTHS[name];
 }
 
-export function hashBytes(name: string, data: Uint8Array): Buffer {
+/**
+ * Compute a SHA-* digest of the given bytes via the active backend.
+ *
+ * Async so that the Web backend (which only exposes
+ * `crypto.subtle.digest`, an async API) can satisfy the contract. On
+ * Node the underlying `createHash` is synchronous; the promise
+ * resolves on the same microtask.
+ */
+export async function hashBytes(name: string, data: Uint8Array): Promise<Uint8Array> {
   if (!isRegisteredHashAlgorithm(name)) {
     throw new JssInputError(`Unsupported JSS hash algorithm: ${name}`);
   }
-  // eslint-disable-next-line security/detect-object-injection -- `name` was narrowed to JssHashAlgorithm, a known key.
-  const nodeName = HASH_NAMES[name];
-  return createHash(nodeName).update(data).digest();
+  return backend.digest(name, data);
 }

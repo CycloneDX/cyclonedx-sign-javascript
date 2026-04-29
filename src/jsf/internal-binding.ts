@@ -67,8 +67,8 @@ export interface JsfBindingContract {
     signatureProperty: string,
   ): JsonObject;
   emit(payload: JsonObject, state: JsfWrapperState, signatureProperty: string): JsonObject;
-  toSigner(input: JsfSignerKeyInput): Signer;
-  toVerifier(input: JsfVerifierKeyInput): Verifier;
-  resolveEmbeddedPublicKey(input: JsfSignerKeyInput): JwkPublicKey | null;
+  toSigner(input: JsfSignerKeyInput): Promise<Signer>;
+  toVerifier(input: JsfVerifierKeyInput): Promise<Verifier>;
+  resolveEmbeddedPublicKey(input: JsfSignerKeyInput): Promise<JwkPublicKey | null>;
   descriptorFromWire(core: JsonObject, options: JsfEnvelopeOptions): JsfSignerDescriptor;
 }

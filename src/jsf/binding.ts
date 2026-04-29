@@ -54,6 +54,7 @@ import type {
   JwkPublicKey,
   SignatureFormat,
 } from '../types.js';
+import { backend } from '#crypto-backend';
 import {
   exportPublicJwk,
   toPrivateKey,
@@ -281,7 +282,7 @@ export class JsfBinding implements JsfBindingContract {
 
   // -- key plumbing ----------------------------------------------------------
 
-  toSigner(input: JsfSignerKeyInput): Signer {
+  async toSigner(input: JsfSignerKeyInput): Promise<Signer> {
     if (input.signer) return input.signer;
     if (!input.privateKey) {
       throw new JsfInputError('Either privateKey or a Signer must be provided');
@@ -290,13 +291,17 @@ export class JsfBinding implements JsfBindingContract {
       throw new JsfInputError(`Unsupported algorithm: ${input.algorithm}`);
     }
     const spec = getAlgorithmSpec(input.algorithm);
-    const { keyObject, curve } = toPrivateKey(input.privateKey);
+    // For HMAC, route through importHmacKey so the backend wraps it as
+    // a SymmetricKeyHandle; for everything else, importPrivateKey.
+    const handle = spec.family === 'hmac'
+      ? await backend.importHmacKey(input.privateKey, spec.digest)
+      : await toPrivateKey(input.privateKey);
     return {
-      sign: (bytes) => Promise.resolve(new Uint8Array(signBytes(spec, bytes, keyObject, curve))),
+      sign: (bytes) => signBytes(spec, bytes, handle),
     };
   }
 
-  toVerifier(input: JsfVerifierKeyInput): Verifier {
+  async toVerifier(input: JsfVerifierKeyInput): Promise<Verifier> {
     if (!isRegisteredAlgorithm(input.algorithm)) {
       throw new JsfInputError(`Unsupported algorithm: ${input.algorithm}`);
     }
@@ -307,14 +312,15 @@ export class JsfBinding implements JsfBindingContract {
         'No public key available: provide options.publicKey or include signer.publicKey',
       );
     }
-    const { keyObject, curve } = toPublicKey(keyInput);
+    const handle = spec.family === 'hmac'
+      ? await backend.importHmacKey(keyInput, spec.digest)
+      : await toPublicKey(keyInput);
     return {
-      verify: (bytes, signature) =>
-        Promise.resolve(verifyBytes(spec, bytes, signature, keyObject, curve)),
+      verify: (bytes, signature) => verifyBytes(spec, bytes, signature, handle),
     };
   }
 
-  resolveEmbeddedPublicKey(input: JsfSignerKeyInput): JwkPublicKey | null {
+  async resolveEmbeddedPublicKey(input: JsfSignerKeyInput): Promise<JwkPublicKey | null> {
     if (!isRegisteredAlgorithm(input.algorithm)) return null;
     const spec = getAlgorithmSpec(input.algorithm);
     if (spec.family === 'hmac') {

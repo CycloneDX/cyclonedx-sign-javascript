@@ -45,7 +45,8 @@ export {
 export {
   publicKeyFromPemBody,
   pemBodyFromPublicKey,
-  privateKeyFromPem,
+  toPrivateKey as jssToPrivateKey,
+  toPublicKey as jssToPublicKey,
 } from './pem.js';
 
 export type {

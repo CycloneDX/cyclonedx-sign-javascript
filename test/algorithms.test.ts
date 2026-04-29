@@ -20,19 +20,16 @@ Copyright (c) OWASP Foundation. All Rights Reserved.
 /**
  * Algorithm registry and primitive sign/verify tests.
  *
- * This layer owns every call into node:crypto. The tests sign and
- * verify canonical byte arrays directly so that any issue with
- * algorithm dispatch or key-type gating surfaces here instead of
- * being obscured by the higher-level JSF orchestrator.
+ * The tests sign and verify canonical byte arrays directly so that
+ * any issue with algorithm dispatch or key-type gating surfaces here
+ * instead of being obscured by the higher-level JSF orchestrator.
+ * After the dual-runtime refactor, signBytes / verifyBytes are async
+ * and take backend-neutral key handles, so the tests await every
+ * primitive call and route HMAC keys through `backend.importHmacKey`.
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  generateKeyPairSync,
-  randomBytes,
-  createSecretKey,
-  type KeyObject,
-} from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 
 import {
   getAlgorithmSpec,
@@ -41,10 +38,14 @@ import {
   verifyBytes,
 } from '../src/jsf/algorithms.js';
 import { toPrivateKey, toPublicKey } from '../src/jwk.js';
+import { backend } from '../src/internal/crypto/node.js';
 import { JsfInputError } from '../src/errors.js';
-import { ecPair, edPair, rsaPair, type KeyPair } from './helpers.js';
+import { ecPair, edPair, rsaPair } from './helpers.js';
 
 const DATA = new TextEncoder().encode('canonical payload');
+
+const importHmac = (bytes: Uint8Array) =>
+  backend.importHmacKey(bytes, 'sha-256');
 
 describe('algorithm registry', () => {
   it('knows every specified JSF algorithm', () => {
@@ -81,148 +82,149 @@ describe('algorithm registry', () => {
 });
 
 describe('signBytes + verifyBytes round-trips', () => {
-  it('RS256 signs and verifies', () => {
+  it('RS256 signs and verifies', async () => {
     const { privateKey, publicKey } = rsaPair();
     const spec = getAlgorithmSpec('RS256');
-    const priv = toPrivateKey(privateKey);
-    const pub = toPublicKey(publicKey);
-    const sig = signBytes(spec, DATA, priv.keyObject, priv.curve);
-    expect(verifyBytes(spec, DATA, sig, pub.keyObject, pub.curve)).toBe(true);
+    const priv = await toPrivateKey(privateKey);
+    const pub = await toPublicKey(publicKey);
+    const sig = await signBytes(spec, DATA, priv);
+    expect(await verifyBytes(spec, DATA, sig, pub)).toBe(true);
   });
 
-  it('PS256 signs and verifies with distinct ciphertexts per call', () => {
+  it('PS256 signs and verifies with distinct ciphertexts per call', async () => {
     const { privateKey, publicKey } = rsaPair();
     const spec = getAlgorithmSpec('PS256');
-    const priv = toPrivateKey(privateKey);
-    const pub = toPublicKey(publicKey);
-    const sig1 = signBytes(spec, DATA, priv.keyObject, priv.curve);
-    const sig2 = signBytes(spec, DATA, priv.keyObject, priv.curve);
-    expect(sig1.equals(sig2)).toBe(false);
-    expect(verifyBytes(spec, DATA, sig1, pub.keyObject, pub.curve)).toBe(true);
-    expect(verifyBytes(spec, DATA, sig2, pub.keyObject, pub.curve)).toBe(true);
+    const priv = await toPrivateKey(privateKey);
+    const pub = await toPublicKey(publicKey);
+    const sig1 = await signBytes(spec, DATA, priv);
+    const sig2 = await signBytes(spec, DATA, priv);
+    expect(Buffer.from(sig1).equals(Buffer.from(sig2))).toBe(false);
+    expect(await verifyBytes(spec, DATA, sig1, pub)).toBe(true);
+    expect(await verifyBytes(spec, DATA, sig2, pub)).toBe(true);
   });
 
-  it('ES256 signs and verifies with a fixed-length raw R||S signature', () => {
+  it('ES256 signs and verifies with a fixed-length raw R||S signature', async () => {
     const { privateKey, publicKey } = ecPair('prime256v1');
     const spec = getAlgorithmSpec('ES256');
-    const priv = toPrivateKey(privateKey);
-    const pub = toPublicKey(publicKey);
-    const sig = signBytes(spec, DATA, priv.keyObject, priv.curve);
+    const priv = await toPrivateKey(privateKey);
+    const pub = await toPublicKey(publicKey);
+    const sig = await signBytes(spec, DATA, priv);
     expect(sig.length).toBe(64);
-    expect(verifyBytes(spec, DATA, sig, pub.keyObject, pub.curve)).toBe(true);
+    expect(await verifyBytes(spec, DATA, sig, pub)).toBe(true);
   });
 
-  it('ES384 produces a 96-byte raw signature', () => {
+  it('ES384 produces a 96-byte raw signature', async () => {
     const { privateKey, publicKey } = ecPair('secp384r1');
     const spec = getAlgorithmSpec('ES384');
-    const priv = toPrivateKey(privateKey);
-    const pub = toPublicKey(publicKey);
-    const sig = signBytes(spec, DATA, priv.keyObject, priv.curve);
+    const priv = await toPrivateKey(privateKey);
+    const pub = await toPublicKey(publicKey);
+    const sig = await signBytes(spec, DATA, priv);
     expect(sig.length).toBe(96);
-    expect(verifyBytes(spec, DATA, sig, pub.keyObject, pub.curve)).toBe(true);
+    expect(await verifyBytes(spec, DATA, sig, pub)).toBe(true);
   });
 
-  it('ES512 produces a 132-byte raw signature', () => {
+  it('ES512 produces a 132-byte raw signature', async () => {
     const { privateKey, publicKey } = ecPair('secp521r1');
     const spec = getAlgorithmSpec('ES512');
-    const priv = toPrivateKey(privateKey);
-    const pub = toPublicKey(publicKey);
-    const sig = signBytes(spec, DATA, priv.keyObject, priv.curve);
+    const priv = await toPrivateKey(privateKey);
+    const pub = await toPublicKey(publicKey);
+    const sig = await signBytes(spec, DATA, priv);
     expect(sig.length).toBe(132);
-    expect(verifyBytes(spec, DATA, sig, pub.keyObject, pub.curve)).toBe(true);
+    expect(await verifyBytes(spec, DATA, sig, pub)).toBe(true);
   });
 
-  it('Ed25519 signs and verifies', () => {
+  it('Ed25519 signs and verifies', async () => {
     const { privateKey, publicKey } = edPair('ed25519');
     const spec = getAlgorithmSpec('Ed25519');
-    const priv = toPrivateKey(privateKey);
-    const pub = toPublicKey(publicKey);
-    const sig = signBytes(spec, DATA, priv.keyObject, priv.curve);
-    expect(verifyBytes(spec, DATA, sig, pub.keyObject, pub.curve)).toBe(true);
+    const priv = await toPrivateKey(privateKey);
+    const pub = await toPublicKey(publicKey);
+    const sig = await signBytes(spec, DATA, priv);
+    expect(await verifyBytes(spec, DATA, sig, pub)).toBe(true);
   });
 
-  it('Ed448 signs and verifies', () => {
+  it('Ed448 signs and verifies', async () => {
     const { privateKey, publicKey } = edPair('ed448');
     const spec = getAlgorithmSpec('Ed448');
-    const priv = toPrivateKey(privateKey);
-    const pub = toPublicKey(publicKey);
-    const sig = signBytes(spec, DATA, priv.keyObject, priv.curve);
-    expect(verifyBytes(spec, DATA, sig, pub.keyObject, pub.curve)).toBe(true);
+    const priv = await toPrivateKey(privateKey);
+    const pub = await toPublicKey(publicKey);
+    const sig = await signBytes(spec, DATA, priv);
+    expect(await verifyBytes(spec, DATA, sig, pub)).toBe(true);
   });
 
-  it('HS256 signs and verifies symmetrically', () => {
-    const key = createSecretKey(randomBytes(32));
+  it('HS256 signs and verifies symmetrically', async () => {
+    const key = await importHmac(new Uint8Array(randomBytes(32)));
     const spec = getAlgorithmSpec('HS256');
-    const sig = signBytes(spec, DATA, key, null);
-    expect(verifyBytes(spec, DATA, sig, key, null)).toBe(true);
+    const sig = await signBytes(spec, DATA, key);
+    expect(await verifyBytes(spec, DATA, sig, key)).toBe(true);
   });
 
-  it('HS256 rejects a bad MAC with a length mismatch', () => {
-    const key = createSecretKey(randomBytes(32));
+  it('HS256 rejects a bad MAC with a length mismatch', async () => {
+    const key = await importHmac(new Uint8Array(randomBytes(32)));
     const spec = getAlgorithmSpec('HS256');
-    const sig = signBytes(spec, DATA, key, null);
+    const sig = await signBytes(spec, DATA, key);
     const truncated = sig.subarray(0, sig.length - 1);
-    expect(verifyBytes(spec, DATA, truncated, key, null)).toBe(false);
+    expect(await verifyBytes(spec, DATA, truncated, key)).toBe(false);
   });
 });
 
 describe('signBytes + verifyBytes tamper detection', () => {
-  it('RS256 verify fails when data changes', () => {
+  it('RS256 verify fails when data changes', async () => {
     const { privateKey, publicKey } = rsaPair();
     const spec = getAlgorithmSpec('RS256');
-    const priv = toPrivateKey(privateKey);
-    const pub = toPublicKey(publicKey);
-    const sig = signBytes(spec, DATA, priv.keyObject, priv.curve);
+    const priv = await toPrivateKey(privateKey);
+    const pub = await toPublicKey(publicKey);
+    const sig = await signBytes(spec, DATA, priv);
     const mutated = new TextEncoder().encode('canonical payloaD');
-    expect(verifyBytes(spec, mutated, sig, pub.keyObject, pub.curve)).toBe(false);
+    expect(await verifyBytes(spec, mutated, sig, pub)).toBe(false);
   });
 
-  it('ES256 verify fails on malformed signature length', () => {
+  it('ES256 verify fails on malformed signature length', async () => {
     const { privateKey, publicKey } = ecPair('prime256v1');
     const spec = getAlgorithmSpec('ES256');
-    const priv = toPrivateKey(privateKey);
-    const pub = toPublicKey(publicKey);
-    const sig = signBytes(spec, DATA, priv.keyObject, priv.curve);
+    const priv = await toPrivateKey(privateKey);
+    const pub = await toPublicKey(publicKey);
+    const sig = await signBytes(spec, DATA, priv);
     const wrong = new Uint8Array(sig.length + 1);
     wrong.set(sig);
-    expect(verifyBytes(spec, DATA, wrong, pub.keyObject, pub.curve)).toBe(false);
+    expect(await verifyBytes(spec, DATA, wrong, pub)).toBe(false);
   });
 
-  it('HS256 verify fails on tampered MAC', () => {
-    const key = createSecretKey(randomBytes(32));
+  it('HS256 verify fails on tampered MAC', async () => {
+    const key = await importHmac(new Uint8Array(randomBytes(32)));
     const spec = getAlgorithmSpec('HS256');
-    const sig = Buffer.from(signBytes(spec, DATA, key, null));
-    sig[0] = (sig[0] ?? 0) ^ 0x01;
-    expect(verifyBytes(spec, DATA, sig, key, null)).toBe(false);
+    const sig = await signBytes(spec, DATA, key);
+    const tampered = new Uint8Array(sig);
+    tampered[0] = (tampered[0] ?? 0) ^ 0x01;
+    expect(await verifyBytes(spec, DATA, tampered, key)).toBe(false);
   });
 });
 
 describe('key-type gating', () => {
-  it('rejects an RSA signing request with an EC key', () => {
+  it('rejects an RSA signing request with an EC key', async () => {
     const { privateKey } = ecPair('prime256v1');
     const spec = getAlgorithmSpec('RS256');
-    const priv = toPrivateKey(privateKey);
-    expect(() => signBytes(spec, DATA, priv.keyObject, priv.curve)).toThrow(/RSA key/);
+    const priv = await toPrivateKey(privateKey);
+    await expect(signBytes(spec, DATA, priv)).rejects.toThrow(/RSA key/);
   });
 
-  it('rejects ES256 with a P-384 key', () => {
+  it('rejects ES256 with a P-384 key', async () => {
     const { privateKey } = ecPair('secp384r1');
     const spec = getAlgorithmSpec('ES256');
-    const priv = toPrivateKey(privateKey);
-    expect(() => signBytes(spec, DATA, priv.keyObject, priv.curve)).toThrow(/P-256/);
+    const priv = await toPrivateKey(privateKey);
+    await expect(signBytes(spec, DATA, priv)).rejects.toThrow(/P-256/);
   });
 
-  it('rejects Ed25519 with an Ed448 key', () => {
+  it('rejects Ed25519 with an Ed448 key', async () => {
     const { privateKey } = edPair('ed448');
     const spec = getAlgorithmSpec('Ed25519');
-    const priv = toPrivateKey(privateKey);
-    expect(() => signBytes(spec, DATA, priv.keyObject, priv.curve)).toThrow(/ed25519/i);
+    const priv = await toPrivateKey(privateKey);
+    await expect(signBytes(spec, DATA, priv)).rejects.toThrow(/ed25519/i);
   });
 
-  it('rejects HMAC signing with an asymmetric key', () => {
+  it('rejects HMAC signing with an asymmetric key', async () => {
     const { privateKey } = rsaPair();
     const spec = getAlgorithmSpec('HS256');
-    const priv = toPrivateKey(privateKey);
-    expect(() => signBytes(spec, DATA, priv.keyObject, priv.curve)).toThrow(/symmetric/);
+    // The HMAC import path explicitly rejects asymmetric KeyObjects.
+    await expect(backend.importHmacKey(privateKey, 'sha-256')).rejects.toThrow(/symmetric/);
   });
 });

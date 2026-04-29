@@ -17,7 +17,7 @@ Standalone TypeScript implementation of the JSON signing formats used by Cyclone
 
 One library so tool authors can sign and verify CycloneDX BOMs across specification versions through a single dependency. The top-level `sign` and `verify` are async and accept a `cyclonedxVersion` option (a `CycloneDxMajor` enum value) and route to JSF for 1.x or JSS for 2.x.
 
-The only runtime dependency outside `node:crypto` is [`@noble/curves`][link_noble_curves], used solely for the JSS ECDSA pre-hashed signing path that `node:crypto` cannot expose. JSF, JCS, EdDSA, RSA, and RSA-PSS are all served by `node:crypto` directly.
+The library ships first-class crypto backends for both `node:crypto` and the standard `crypto.subtle` (Web Crypto) API. Your runtime or bundler picks the right one automatically, so the same `import { sign } from '@cyclonedx/sign'` works in Node, browsers, Deno, Cloudflare Workers, and any other environment that exposes either surface. The only runtime dependency is [`@noble/curves`][link_noble_curves], used for ECDSA pre-hashed signing on both backends and for Ed25519 / Ed448 on the Web backend where Subtle support is incomplete.
 
 ## Status
 
@@ -35,7 +35,54 @@ Clause-by-clause compliance tables and known errata are documented inside the [J
 npm install @cyclonedx/sign
 ```
 
-Requires Node 20.19 or later.
+Requires Node 20.19 or later, or any modern browser / runtime with Web Crypto. See [Runtime support](#runtime-support) below for the full compatibility matrix.
+
+## Runtime support
+
+The library ships two parallel crypto implementations and selects between them automatically based on which APIs the host runtime exposes. Consumers do not pick; the resolver does.
+
+### Auto selection
+
+`@cyclonedx/sign` declares an internal subpath (`#crypto-backend`) in its `package.json` `imports` field with a Node and a default condition. Node's resolver picks the Node implementation; any bundler or runtime that does not assert the `node` condition (Vite, esbuild, webpack, Rollup, Deno, Cloudflare Workers, Bun targeting browser, etc.) lands on the Web implementation. The public API surface is identical in both cases.
+
+### What each backend uses
+
+| Backend | Hash, RSA / ECDSA / EdDSA / HMAC sign and verify | Notes |
+|---------|----------------------------------------------------|-------|
+| Node    | `node:crypto` for everything                       | Native OpenSSL throughout. ECDSA pre-hashed (a JSS requirement) goes through `@noble/curves` because Node's high-level `crypto.sign` always re-hashes its input. |
+| Web     | `crypto.subtle` for hash, RSA, ECDSA, Ed25519, HMAC | Where Subtle has no equivalent primitive (raw RSA for JSS pre-hashed, Ed448 sign/verify), the library falls through to a pure-JS path: a small `BigInt` modular-exponentiation primitive for raw RSA, and `@noble/curves` for Ed448. Same wire output as the Node backend. |
+
+### Algorithm coverage
+
+Both backends support the full algorithm matrix below for both formats:
+
+| Family   | JSF | JSS |
+|----------|:---:|:---:|
+| RS256 / RS384 / RS512 (RSA-PKCS1) | yes | yes |
+| PS256 / PS384 / PS512 (RSA-PSS)   | yes | yes |
+| ES256 / ES384 / ES512 (ECDSA)     | yes | yes |
+| Ed25519                            | yes | yes |
+| Ed448                              | yes | yes |
+| HS256 / HS384 / HS512 (HMAC)      | yes | not applicable (JSS is asymmetric) |
+
+Wire compatibility between the two backends is verified by the cross-backend interop tests (every algorithm, both directions) and by direct byte comparison against `node:crypto.privateEncrypt(RSA_NO_PADDING)` for the JS BigInt RSA path.
+
+### Browser baseline
+
+The Web backend targets modern evergreen browsers: Chrome 120+, Firefox 120+, Safari 17+, plus Deno 1.40+, Cloudflare Workers, and Node 20.19+ when used through the Web condition. `BigInt`, `crypto.subtle`, and the global `CryptoKey` / `JsonWebKey` types are required. Older Safari without Ed25519 Subtle support automatically falls through to the `@noble/curves` path.
+
+### Key input forms
+
+`KeyInput` is runtime neutral. Pass any of these forms; the active backend normalizes:
+
+- A JWK object (with `kty` set). Same shape works in both runtimes.
+- A PEM string. PKCS#8 for private keys, SubjectPublicKeyInfo for public keys, X.509 for certificates. The Node backend accepts the broader set (PKCS#1, SEC1) by way of `node:crypto`. The Web backend accepts PKCS#8 and SPKI; convert with `openssl pkcs8 -topk8` for legacy PKCS#1 or SEC1 inputs.
+- A `Uint8Array` (HMAC key bytes only).
+- A native `KeyObject` (Node backend only) or `CryptoKey` (Web backend only). Cross-backend usage of the native handles is rejected with a clear error.
+
+### Forcing a backend
+
+Auto selection is the supported path. If you need to override (build-tool sniff failures, custom bundler conditions), use the `--conditions` flag in your runtime / bundler config to add or remove the `node` condition.
 
 ## Quick start
 

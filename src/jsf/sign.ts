@@ -204,7 +204,7 @@ async function appendInternal(
 
   validateAppendExtensions(signer, view.options.extensions);
 
-  const newDescriptor: JsfSignerDescriptor = signerInputToDescriptor(signer);
+  const newDescriptor: JsfSignerDescriptor = await signerInputToDescriptor(signer);
   const baseState: JsfWrapperState = {
     mode: view.mode,
     options: view.options,
@@ -255,7 +255,7 @@ async function appendInternal(
   const newIndex = extended.signers.length - 1;
 
   // Build the canonical view for the new signer and sign it.
-  const signerImpl = JSF_BINDING.toSigner(signerInputToCore(signer));
+  const signerImpl = await JSF_BINDING.toSigner(signerInputToCore(signer));
 
   // Strip the value off the to-be-signed descriptor so the canonical
   // view matches what other implementations would produce.
@@ -448,14 +448,14 @@ function signerInputToCore(s: JsfSignerInput): JsfSignerKeyInput {
   return out;
 }
 
-function signerInputToDescriptor(s: JsfSignerInput): JsfSignerDescriptor {
+async function signerInputToDescriptor(s: JsfSignerInput): Promise<JsfSignerDescriptor> {
   const d: JsfSignerDescriptor = { algorithm: s.algorithm };
   if (s.keyId !== undefined) d.keyId = s.keyId;
   if (s.certificatePath !== undefined) d.certificatePath = [...s.certificatePath];
   if (s.extensionValues !== undefined) d.extensionValues = { ...s.extensionValues };
   // Embedded public key on the descriptor is what JSF will write to
   // the wire; mirror toSigner's rules.
-  const embedded = JSF_BINDING.resolveEmbeddedPublicKey(signerInputToCore(s));
+  const embedded = await JSF_BINDING.resolveEmbeddedPublicKey(signerInputToCore(s));
   if (embedded) d.publicKey = embedded;
   return d;
 }

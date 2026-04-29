@@ -20,11 +20,19 @@ Copyright (c) OWASP Foundation. All Rights Reserved.
 /**
  * Shared type definitions for the @cyclonedx/sign package.
  *
- * This module holds only the types that are neutral across JSF and JSS.
- * Format-specific types live in ./jsf/types.ts and ./jss/types.ts.
+ * This module holds only the types that are neutral across JSF and
+ * JSS, and across runtime environments. Format-specific types live in
+ * ./jsf/types.ts and ./jss/types.ts. Backend-specific types (handles,
+ * algorithm dispatch) live in ./internal/crypto.
  */
 
-import type { KeyObject } from 'node:crypto';
+// Type-only imports — erased at compile time. The runtime KeyInput
+// dispatch lives in the active crypto backend (Node or Web), which
+// imports its native key type at runtime. Both names appear here so
+// the public KeyInput union is the same regardless of which backend
+// the consumer ends up loading.
+import type { KeyObject as NodeKeyObject } from 'node:crypto';
+import type { webcrypto as wc } from 'node:crypto';
 
 /** JSON value types recognized by JCS, JSF, and JSS. */
 export type JsonValue =
@@ -59,21 +67,46 @@ export interface JwkPublicKey {
   // HMAC (signing only; never embedded in a signed envelope because
   // symmetric keys are secret, but modeled for completeness).
   k?: string;
+  // Private-half parameters (allowed in caller input; stripped on
+  // export via sanitizePublicJwk).
+  d?: string;
+  p?: string;
+  q?: string;
+  dp?: string;
+  dq?: string;
+  qi?: string;
   [extra: string]: unknown;
 }
 
 /**
  * Accepted private-key and public-key inputs for signing and verifying.
  *
- * JWK objects are fully-described material. Strings accept PEM-encoded
- * PKCS#8 private keys, SPKI public keys, X.509 certificates, or JWK
- * JSON. Buffers are treated as raw symmetric key material. KeyObject
- * instances pass through untouched.
+ * The library normalizes any of these forms into a backend-neutral
+ * handle internally; from the caller's perspective, supply whichever
+ * form is most convenient:
  *
- * For HMAC (HS256/384/512) pass either a Buffer of raw key bytes or a
- * JWK with kty='oct' and k set to the base64url-encoded key.
+ *   - JWK objects with `kty` set.
+ *   - PEM-encoded PKCS#8 private keys, SPKI public keys, X.509
+ *     certificates, or JWK JSON in a string.
+ *   - `Uint8Array` / `Buffer` — raw symmetric key material for HMAC.
+ *   - A Node `KeyObject` — accepted by the Node backend only.
+ *   - A Web `CryptoKey` — accepted by the Web backend only (with
+ *     `extractable: true` if the key will be used for JSS pre-hashed
+ *     RSA, since raw RSA needs the private params).
+ *
+ * Cross-backend usage of `KeyObject` / `CryptoKey` is rejected with a
+ * clear error: the right portable form is JWK or PEM.
+ *
+ * For HMAC (HS256/384/512) pass either a `Uint8Array` of raw key bytes
+ * or a JWK with `kty='oct'` and `k` set to the base64url-encoded key.
  */
-export type KeyInput = JwkPublicKey | string | Buffer | Uint8Array | KeyObject;
+export type KeyInput =
+  | JwkPublicKey
+  | string
+  | Buffer
+  | Uint8Array
+  | NodeKeyObject
+  | wc.CryptoKey;
 
 /**
  * CycloneDX major version. This is the primary discriminator exposed by

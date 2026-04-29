@@ -20,84 +20,75 @@ Copyright (c) OWASP Foundation. All Rights Reserved.
 /**
  * JWK import and export helpers.
  *
- * JSF embeds verifying keys as JWK objects (RFC 7517). Node's own
- * KeyObject can export to JWK and import from JWK for RSA/EC/OKP/oct,
- * but the input shapes we accept from application callers are messier
- * than Node's strict JWK parser tolerates. This module normalizes:
+ * JSF embeds verifying keys as JWK objects (RFC 7517). This module
+ * delegates the actual import / export work to the active crypto
+ * backend (`#crypto-backend`). Callers can supply:
  *
- *   - PEM strings (PKCS#1, PKCS#8, SPKI, X.509)
- *   - Raw DER buffers (inferred as SPKI for public, PKCS#8 for private)
- *   - Pre-parsed JWK objects
- *   - Node KeyObject instances, which pass straight through
+ *   - PEM strings (PKCS#8 private, SPKI public, X.509 certificate)
+ *   - JWK objects (with private parameters for sign-side, without for
+ *     verify-side)
+ *   - Raw `Uint8Array` for HMAC keys
+ *   - Backend-native handles (Node `KeyObject` or Web `CryptoKey`,
+ *     each accepted only by its corresponding backend)
  *
- * It also canonicalizes the JWK shape to the subset JSF recognizes:
- *   RSA:  { kty: 'RSA', n, e }
- *   EC:   { kty: 'EC', crv, x, y }
- *   OKP:  { kty: 'OKP', crv, x }
- *   oct:  { kty: 'oct', k }
- *
- * Extraneous JWK fields (alg, use, key_ops, etc.) are stripped from
- * exports so the embedded publicKey never leaks policy beyond what
- * the JSF signer intentionally published.
+ * The module also exposes `sanitizePublicJwk()` which strips a JWK to
+ * the subset JSF recognizes (and explicitly removes private fields
+ * like `d`, `p`, `q` so a sign-side JWK never leaks through to the
+ * embedded `publicKey` slot).
  */
 
-import { createPrivateKey, createPublicKey, createSecretKey, KeyObject } from 'node:crypto';
+import { backend } from '#crypto-backend';
+import type { PrivateKeyHandle, PublicKeyHandle } from './internal/crypto/types.js';
 import type { JwkPublicKey, KeyInput } from './types.js';
 import { JsfKeyError } from './errors.js';
 
-export interface NormalizedPrivateKey {
-  /** The Node KeyObject ready for signing. */
-  keyObject: KeyObject;
-  /** The key type as reported by Node (rsa | ec | ed25519 | ed448 | oct). */
-  asymmetricKeyType: string;
-  /** Curve name for ec/ed keys ('P-256', 'P-384', 'P-521', 'Ed25519', 'Ed448'). null otherwise. */
-  curve: string | null;
-}
-
-export type NormalizedPublicKey = NormalizedPrivateKey;
+/** Public re-export so callers can hold the same type the library uses internally. */
+export type NormalizedPrivateKey = PrivateKeyHandle;
+export type NormalizedPublicKey = PublicKeyHandle;
 
 /**
- * Convert a KeyInput to a Node private KeyObject, along with some
- * metadata handy for the signing layer.
+ * Convert a KeyInput to a private key handle. The handle exposes the
+ * key's metadata (kind, curve, RSA modulus bits) and is consumed by
+ * the format orchestrators directly.
  */
-export function toPrivateKey(input: KeyInput): NormalizedPrivateKey {
-  if (input instanceof KeyObject) return privateFromKeyObject(input);
-  if (typeof input === 'string') return privateFromString(input);
-  if (isRawBytes(input)) return normalizedSecret(input);
-  if (isJwkInput(input)) return privateFromJwk(input);
-  throw new JsfKeyError('Unsupported private key input');
+export async function toPrivateKey(input: KeyInput): Promise<PrivateKeyHandle> {
+  try {
+    return await backend.importPrivateKey(input);
+  } catch (err) {
+    throw new JsfKeyError(`Unsupported private key input: ${(err as Error).message}`);
+  }
 }
 
 /**
- * Convert a KeyInput to a Node public KeyObject. Accepts JWK, PEM
- * (SPKI or X.509), Node KeyObject (public or private — the public half
- * is extracted from a private key), or HMAC bytes for symmetric alg.
+ * Convert a KeyInput to a public key handle. Private-key inputs are
+ * converted to their public half automatically.
  */
-export function toPublicKey(input: KeyInput): NormalizedPublicKey {
-  if (input instanceof KeyObject) return publicFromKeyObject(input);
-  if (typeof input === 'string') return publicFromString(input);
-  if (isRawBytes(input)) return normalizedSecret(input);
-  if (isJwkInput(input)) return publicFromJwk(input);
-  throw new JsfKeyError('Unsupported public key input');
+export async function toPublicKey(input: KeyInput): Promise<PublicKeyHandle> {
+  try {
+    return await backend.importPublicKey(input);
+  } catch (err) {
+    throw new JsfKeyError(`Unsupported public key input: ${(err as Error).message}`);
+  }
 }
 
 /**
  * Derive the publicKey JWK to embed in a JSF signer from any accepted
  * private or public key input.
  */
-export function exportPublicJwk(input: KeyInput): JwkPublicKey {
-  const { keyObject, asymmetricKeyType } = toPublicKey(input);
-  if (asymmetricKeyType === 'oct') {
+export async function exportPublicJwk(input: KeyInput): Promise<JwkPublicKey> {
+  const handle = await toPublicKey(input);
+  if (handle.kind === 'oct') {
     throw new JsfKeyError('HMAC keys must not be embedded in a JSF envelope');
   }
-  const rawJwk = keyObject.export({ format: 'jwk' }) as Record<string, unknown>;
-  return sanitizePublicJwk(rawJwk);
+  const raw = await handle.exportJwk();
+  return sanitizePublicJwk(raw as Record<string, unknown>);
 }
 
 /**
- * Strip JWK to the fields JSF actually defines for each kty.
- * Downstream consumers can still round-trip a sanitized JWK through
- * Node because all required fields remain present.
+ * Strip a JWK to the fields JSF actually defines for each kty, and
+ * remove every private parameter. Downstream consumers can still
+ * round-trip a sanitized JWK through any importer because all
+ * required public fields remain present.
  */
 export function sanitizePublicJwk(raw: Record<string, unknown>): JwkPublicKey {
   const kty = raw.kty;
@@ -120,121 +111,6 @@ export function sanitizePublicJwk(raw: Record<string, unknown>): JwkPublicKey {
     return { kty: 'oct', k: String(raw.k) };
   }
   throw new JsfKeyError(`Unsupported JWK kty: ${String(kty)}`);
-}
-
-// -- Dispatchers for each input kind ------------------------------------------
-
-function privateFromKeyObject(input: KeyObject): NormalizedPrivateKey {
-  if (input.type === 'secret') {
-    return { keyObject: input, asymmetricKeyType: 'oct', curve: null };
-  }
-  if (input.type !== 'private') {
-    throw new JsfKeyError('KeyObject must be a private key for signing');
-  }
-  return describeAsymmetric(input);
-}
-
-function publicFromKeyObject(input: KeyObject): NormalizedPublicKey {
-  if (input.type === 'secret') {
-    return { keyObject: input, asymmetricKeyType: 'oct', curve: null };
-  }
-  const pub = input.type === 'private' ? createPublicKey(input) : input;
-  return describeAsymmetric(pub);
-}
-
-function privateFromString(s: string): NormalizedPrivateKey {
-  const trimmed = s.trim();
-  if (trimmed.startsWith('{')) return privateFromJwk(parseJwk(trimmed));
-  return describeAsymmetric(createPrivateKey({ key: trimmed, format: 'pem' }));
-}
-
-function publicFromString(s: string): NormalizedPublicKey {
-  const trimmed = s.trim();
-  if (trimmed.startsWith('{')) return publicFromJwk(parseJwk(trimmed));
-  return describeAsymmetric(createPublicKey({ key: trimmed, format: 'pem' }));
-}
-
-function privateFromJwk(jwk: JwkPublicKey): NormalizedPrivateKey {
-  if (jwk.kty === 'oct') return secretFromOctJwk(jwk);
-  // createPrivateKey with format:'jwk' needs the JWK to have the
-  // private parameters (d, p, q, dp, dq, qi for RSA; d for EC/OKP).
-  const keyObject = createPrivateKey({ key: jwk as unknown as Record<string, unknown>, format: 'jwk' });
-  return describeAsymmetric(keyObject);
-}
-
-function publicFromJwk(jwk: JwkPublicKey): NormalizedPublicKey {
-  if (jwk.kty === 'oct') return secretFromOctJwk(jwk);
-  const keyObject = createPublicKey({ key: jwk as unknown as Record<string, unknown>, format: 'jwk' });
-  return describeAsymmetric(keyObject);
-}
-
-// -- Low-level helpers --------------------------------------------------------
-
-function isRawBytes(input: unknown): input is Buffer | Uint8Array {
-  return Buffer.isBuffer(input) || input instanceof Uint8Array;
-}
-
-function isJwkInput(input: unknown): input is JwkPublicKey {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers that bypass the declared KeyInput type.
-  return typeof input === 'object' && input !== null && 'kty' in input;
-}
-
-function normalizedSecret(bytes: Buffer | Uint8Array): NormalizedPrivateKey {
-  // Buffers are only ever HMAC key material. Asymmetric key imports
-  // go through PEM or JWK because DER detection is ambiguous.
-  const secret = createSecretKey(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
-  return { keyObject: secret, asymmetricKeyType: 'oct', curve: null };
-}
-
-function secretFromOctJwk(jwk: JwkPublicKey): NormalizedPrivateKey {
-  if (!jwk.k) {
-    throw new JsfKeyError('JWK oct requires a k property');
-  }
-  const secret = createSecretKey(Buffer.from(jwk.k, 'base64url'));
-  return { keyObject: secret, asymmetricKeyType: 'oct', curve: null };
-}
-
-function describeAsymmetric(keyObject: KeyObject): NormalizedPrivateKey {
-  const asymmetricKeyType = keyObject.asymmetricKeyType;
-  if (!asymmetricKeyType) {
-    throw new JsfKeyError('KeyObject does not expose an asymmetric key type');
-  }
-  return { keyObject, asymmetricKeyType, curve: curveOf(keyObject, asymmetricKeyType) };
-}
-
-function curveOf(keyObject: KeyObject, asymmetricKeyType: string): string | null {
-  if (asymmetricKeyType === 'ec') {
-    // Node exposes the named curve on the key details.
-    return nodeCurveToJwk(keyObject.asymmetricKeyDetails?.namedCurve ?? null);
-  }
-  if (asymmetricKeyType === 'ed25519') return 'Ed25519';
-  if (asymmetricKeyType === 'ed448') return 'Ed448';
-  return null;
-}
-
-function nodeCurveToJwk(node: string | null): string | null {
-  if (!node) return null;
-  switch (node) {
-    case 'prime256v1':
-    case 'P-256':
-      return 'P-256';
-    case 'secp384r1':
-    case 'P-384':
-      return 'P-384';
-    case 'secp521r1':
-    case 'P-521':
-      return 'P-521';
-    default:
-      return node;
-  }
-}
-
-function parseJwk(text: string): JwkPublicKey {
-  try {
-    return JSON.parse(text) as JwkPublicKey;
-  } catch (err) {
-    throw new JsfKeyError(`Invalid JWK JSON: ${(err as Error).message}`);
-  }
 }
 
 function requireFields(raw: Record<string, unknown>, fields: string[], kty: string): void {

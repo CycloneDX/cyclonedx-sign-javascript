@@ -1,7 +1,7 @@
 {
   "name": "@cyclonedx/sign",
   "version": "0.4.0",
-  "description": "Standalone TypeScript implementation of JSON Signature Format (JSF), JSON Signature Schema (JSS, X.590), and the JSON Canonicalization Scheme (JCS, RFC 8785). Single library covering CycloneDX 1.x (JSF) and 2.x (JSS). The only runtime dependency beyond Node crypto is @noble/curves, used solely for JSS ECDSA pre-hashed signing.",
+  "description": "Standalone TypeScript implementation of JSON Signature Format (JSF), JSON Signature Schema (JSS, X.590), and the JSON Canonicalization Scheme (JCS, RFC 8785). Single library covering CycloneDX 1.x (JSF) and 2.x (JSS). Ships first-class crypto backends for Node (node:crypto) and Web (crypto.subtle); the runtime is selected automatically per consumer.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/CycloneDX/cyclonedx-sign-javascript#readme",
   "repository": {
@@ -37,6 +37,13 @@
       "import": "./dist/jwk.js"
     }
   },
+  "imports": {
+    "#crypto-backend": {
+      "types": "./dist/internal/crypto/node.d.ts",
+      "node": "./dist/internal/crypto/node.js",
+      "default": "./dist/internal/crypto/web.js"
+    }
+  },
   "files": [
     "dist",
     "src",
@@ -58,7 +65,9 @@
     "x590",
     "jcs",
     "rfc8785",
-    "canonicalization"
+    "canonicalization",
+    "webcrypto",
+    "browser"
   ],
   "scripts": {
     "build": "tsc",

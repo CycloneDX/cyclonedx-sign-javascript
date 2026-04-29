@@ -69,17 +69,17 @@ export interface JsfOrchestratorSignInput {
 export async function signEnvelope(input: JsfOrchestratorSignInput): Promise<JsonObject> {
   const { payload, inputs, mode, options, binding, signatureProperty, raiseInput } = input;
 
-  const descriptors: JsfSignerDescriptor[] = inputs.map((ski) => {
+  const descriptors: JsfSignerDescriptor[] = await Promise.all(inputs.map(async (ski) => {
     const desc: JsfSignerDescriptor = { algorithm: ski.algorithm };
     if (ski.keyId !== undefined) desc.keyId = ski.keyId;
     if (ski.certificatePath !== undefined) desc.certificatePath = [...ski.certificatePath];
     if (ski.extensionValues !== undefined) {
       desc.extensionValues = { ...ski.extensionValues };
     }
-    const embedded = binding.resolveEmbeddedPublicKey(ski);
+    const embedded = await binding.resolveEmbeddedPublicKey(ski);
     if (embedded) desc.publicKey = embedded;
     return desc;
-  });
+  }));
 
   const state: JsfWrapperState = {
     mode,
@@ -90,7 +90,7 @@ export async function signEnvelope(input: JsfOrchestratorSignInput): Promise<Jso
 
   validateStateAtSign(state, raiseInput);
 
-  const signers = inputs.map((ski) => binding.toSigner(ski));
+  const signers = await Promise.all(inputs.map((ski) => binding.toSigner(ski)));
 
   for (let i = 0; i < state.signers.length; i++) {
     const view = binding.buildCanonicalView(payload, state, i, signatureProperty);
@@ -256,7 +256,7 @@ export async function verifyEnvelope(
 
     let verifier;
     try {
-      verifier = binding.toVerifier(verifierInput);
+      verifier = await binding.toVerifier(verifierInput);
     } catch (e) {
       raiseVerify((e as Error).message);
     }

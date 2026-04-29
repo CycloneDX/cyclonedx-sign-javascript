@@ -58,7 +58,8 @@ import type {
 } from './types.js';
 import type { VerifyPolicy } from '../core/policy.js';
 import type { JssSignerDescriptor, JssWrapperState } from './internal-types.js';
-import { KeyObject, X509Certificate } from 'node:crypto';
+import { backend } from '#crypto-backend';
+import type { PublicKeyHandle } from '../internal/crypto/types.js';
 
 const DEFAULT_SIGNATURE_PROPERTY = 'signatures';
 const DEFAULT_HASH_ALGORITHM = 'sha-256';
@@ -121,7 +122,7 @@ async function signOne(
   const algorithm = input.algorithm;
   const hashAlgorithm = input.hash_algorithm ?? DEFAULT_HASH_ALGORITHM;
 
-  const desc = signerInputToDescriptor(input, hashAlgorithm);
+  const desc = await signerInputToDescriptor(input, hashAlgorithm);
 
   // Build the per-signer canonical view: payload (without prior
   // signatures) plus a `signatures` array containing only this signer
@@ -139,7 +140,7 @@ async function signOne(
     signatureProperty,
   );
   const canonicalBytes = canonicalize(view);
-  const digest = hashBytes(hashAlgorithm, canonicalBytes);
+  const digest = await hashBytes(hashAlgorithm, canonicalBytes);
 
   if (input.signer) {
     const sigBytes = await input.signer.sign(canonicalBytes);
@@ -149,18 +150,18 @@ async function signOne(
   if (!input.privateKey) {
     throw new JssInputError('Either privateKey or a Signer must be provided');
   }
-  const privateKey = toPrivateKey(input.privateKey);
-  const sig = signHash(algorithm, hashAlgorithm, digest, privateKey);
+  const privateKey = await toPrivateKey(input.privateKey);
+  const sig = await signHash(algorithm, hashAlgorithm, digest, privateKey);
   desc.value = encodeBase64Url(sig);
   return desc;
 }
 
-function signerInputToDescriptor(input: JssSignerInput, hashAlgorithm: string): JssSignerDescriptor {
+async function signerInputToDescriptor(input: JssSignerInput, hashAlgorithm: string): Promise<JssSignerDescriptor> {
   const desc: JssSignerDescriptor = { algorithm: input.algorithm };
   const ext: Record<string, JsonValue> = { [JSS_HASH_ALGO_KEY]: hashAlgorithm };
 
   // Derive embedded public_key PEM body if requested.
-  const embedded = deriveEmbeddedPublicKeyPemBody(input.privateKey, input.public_key);
+  const embedded = await deriveEmbeddedPublicKeyPemBody(input.privateKey, input.public_key);
   if (embedded !== null) ext.public_key = embedded;
 
   if (input.public_cert_chain !== undefined) {
@@ -246,7 +247,7 @@ export async function countersign(
   // (X.590 § 7.2.2). Only the target plus its new counter signature
   // (without value) appear in the canonical view.
   const counterHashAlgorithm = options.signer.hash_algorithm ?? DEFAULT_HASH_ALGORITHM;
-  const counterDesc = signerInputToDescriptor(options.signer, counterHashAlgorithm);
+  const counterDesc = await signerInputToDescriptor(options.signer, counterHashAlgorithm);
   const targetWithCounter = withCounterSig(targetDesc, counterDesc);
   const state: JssWrapperState = {
     mode: 'multi',
@@ -266,17 +267,17 @@ export async function countersign(
     signatureProperty,
   );
   const canonicalBytes = canonicalize(canonicalView);
-  const digest = hashBytes(counterHashAlgorithm, canonicalBytes);
+  const digest = await hashBytes(counterHashAlgorithm, canonicalBytes);
 
-  let sig: Buffer;
+  let sig: Uint8Array;
   if (options.signer.signer) {
-    sig = Buffer.from(await options.signer.signer.sign(canonicalBytes));
+    sig = await options.signer.signer.sign(canonicalBytes);
   } else if (options.signer.privateKey) {
-    sig = signHash(
+    sig = await signHash(
       options.signer.algorithm,
       counterHashAlgorithm,
       digest,
-      toPrivateKey(options.signer.privateKey),
+      await toPrivateKey(options.signer.privateKey),
     );
   } else {
     throw new JssInputError('countersign requires options.signer.privateKey or options.signer.signer');
@@ -346,7 +347,7 @@ export async function verify(
   for (let i = 0; i < view.signers.length; i += 1) {
     // eslint-disable-next-line security/detect-object-injection -- counted loop index
     const desc = view.signers[i]!;
-    const outcome = verifyOne(stripped, desc, i, options, signatureProperty);
+    const outcome = await verifyOne(stripped, desc, i, options, signatureProperty);
     outcomes.push(outcome);
   }
 
@@ -362,13 +363,13 @@ export async function verify(
 
 // All work below is synchronous; the function previously was `async`
 // to compose with an async verifier closure that no longer exists.
-function verifyOne(
+async function verifyOne(
   strippedPayload: JsonObject,
   desc: JssSignerDescriptor,
   index: number,
   options: JssVerifyOptions,
   signatureProperty: string,
-): JssSignerVerifyResult {
+): Promise<JssSignerVerifyResult> {
   const ext = desc.extensionValues ?? {};
   const hashAlgorithm = (ext[JSS_HASH_ALGO_KEY] as string | undefined) ?? DEFAULT_HASH_ALGORITHM;
 
@@ -441,9 +442,9 @@ function verifyOne(
     return out;
   }
 
-  let publicKey: KeyObject;
+  let publicKey: PublicKeyHandle;
   try {
-    publicKey = resolveSignerKey(desc, options, index);
+    publicKey = await resolveSignerKey(desc, options, index);
   } catch (e) {
     out.errors.push(`could not resolve verifying key: ${(e as Error).message}`);
     return out;
@@ -472,11 +473,11 @@ function verifyOne(
     signatureProperty,
   );
   const canonicalBytes = canonicalize(view);
-  const digest = hashBytes(hashAlgorithm, canonicalBytes);
+  const digest = await hashBytes(hashAlgorithm, canonicalBytes);
 
   let ok = false;
   try {
-    ok = verifyHash(desc.algorithm, hashAlgorithm, digest, Buffer.from(signatureBytes), publicKey);
+    ok = await verifyHash(desc.algorithm, hashAlgorithm, digest, signatureBytes, publicKey);
   } catch (e) {
     out.errors.push(`verifier threw: ${(e as Error).message}`);
   }
@@ -490,7 +491,7 @@ function verifyOne(
   if (options.verifyCounterSignatures) {
     const counterWire = ext[JSS_COUNTERSIG_KEY];
     if (counterWire && typeof counterWire === 'object' && !Array.isArray(counterWire)) {
-      const counterResult = verifyCounterOne(
+      const counterResult = await verifyCounterOne(
         strippedPayload,
         desc,
         counterWire,
@@ -510,13 +511,13 @@ function verifyOne(
 
 // Body has no await; the caller (`verifyOne`) does `await
 // verifyCounterOne(...)` which is a no-op on a non-promise value.
-function verifyCounterOne(
+async function verifyCounterOne(
   strippedPayload: JsonObject,
   targetDesc: JssSignerDescriptor,
   counterWire: JsonObject,
   options: JssVerifyOptions,
   signatureProperty: string,
-): JssSignerVerifyResult {
+): Promise<JssSignerVerifyResult> {
   const counterDesc = JSS_BINDING.descriptorFromWire(counterWire, {});
   const ext = counterDesc.extensionValues ?? {};
   const hashAlgorithm = (ext[JSS_HASH_ALGO_KEY] as string | undefined) ?? DEFAULT_HASH_ALGORITHM;
@@ -541,9 +542,9 @@ function verifyCounterOne(
     out.errors.push(`malformed counter signature value: ${(e as Error).message}`);
     return out;
   }
-  let publicKey: KeyObject;
+  let publicKey: PublicKeyHandle;
   try {
-    publicKey = resolveSignerKey(counterDesc, options, -1);
+    publicKey = await resolveSignerKey(counterDesc, options, -1);
   } catch (e) {
     out.errors.push(`could not resolve counter verifying key: ${(e as Error).message}`);
     return out;
@@ -571,11 +572,11 @@ function verifyCounterOne(
     signatureProperty,
   );
   const canonicalBytes = canonicalize(view);
-  const digest = hashBytes(hashAlgorithm, canonicalBytes);
+  const digest = await hashBytes(hashAlgorithm, canonicalBytes);
 
   let ok = false;
   try {
-    ok = verifyHash(counterDesc.algorithm, hashAlgorithm, digest, Buffer.from(signatureBytes), publicKey);
+    ok = await verifyHash(counterDesc.algorithm, hashAlgorithm, digest, signatureBytes, publicKey);
   } catch (e) {
     out.errors.push(`verifier threw: ${(e as Error).message}`);
   }
@@ -718,11 +719,11 @@ function extractExisting(payload: JsonObject, signatureProperty: string): JsonOb
   return [...(slot as JsonObject[])];
 }
 
-function resolveSignerKey(
+async function resolveSignerKey(
   desc: JssSignerDescriptor,
   options: JssVerifyOptions,
   index: number,
-): KeyObject {
+): Promise<PublicKeyHandle> {
   // Caller-supplied per-signer override
   if (options.publicKeys) {
     const k = options.publicKeys.get(index);
@@ -740,8 +741,8 @@ function resolveSignerKey(
   if (Array.isArray(ext.public_cert_chain) && ext.public_cert_chain.length > 0) {
     const first = ext.public_cert_chain[0];
     if (typeof first === 'string' && first.length > 0) {
-      const der = Buffer.from(first, 'base64');
-      return new X509Certificate(der).publicKey;
+      const der = Uint8Array.from(Buffer.from(first, 'base64'));
+      return backend.parseCertSpkiPublicKey(der);
     }
   }
   throw new JssInputError(

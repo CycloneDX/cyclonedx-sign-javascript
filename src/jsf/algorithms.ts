@@ -20,12 +20,11 @@ Copyright (c) OWASP Foundation. All Rights Reserved.
 /**
  * JSF algorithm registry and cryptographic primitives.
  *
- * This module owns every call into `node:crypto` for JSF. The JSF
- * orchestrator never touches Node's sign/verify directly — it asks this
- * module to sign/verify canonical bytes given a spec and a key object.
- * That keeps algorithm knowledge in exactly one place and gives callers
- * a single seam if they later want to retarget to WebCrypto or a
- * hardware token.
+ * This module owns every JSF cryptographic dispatch decision. The JSF
+ * orchestrator never reaches into a host crypto API directly; it asks
+ * this module to sign / verify canonical bytes given a spec and a key
+ * handle. The actual primitive lives in the active backend (Node or
+ * Web), which `signBytes` / `verifyBytes` route through.
  *
  * Per the JSF 0.82 specification and the CycloneDX jsf-0.82 subschema:
  *   RS256/384/512 — RSA PKCS#1 v1.5 with SHA-256/384/512
@@ -38,36 +37,36 @@ Copyright (c) OWASP Foundation. All Rights Reserved.
  *   HS256/384/512 — HMAC with SHA-256/384/512.
  */
 
-import {
-  constants as cryptoConstants,
-  createHmac,
-  sign as nodeSign,
-  timingSafeEqual,
-  verify as nodeVerify,
-  type KeyObject,
-} from 'node:crypto';
+import { backend } from '#crypto-backend';
+import type {
+  PrivateKeyHandle,
+  PublicKeyHandle,
+  Sha,
+  SymmetricKeyHandle,
+  EcCurve,
+} from '../internal/crypto/types.js';
 
 import type { JsfAlgorithm } from './types.js';
 import { JsfSignError, JsfInputError } from '../errors.js';
 
 export interface RsaPkcs1Spec {
   family: 'rsa-pkcs1';
-  digest: 'sha256' | 'sha384' | 'sha512';
+  digest: Sha;
   expectedKeyType: 'rsa';
 }
 
 export interface RsaPssSpec {
   family: 'rsa-pss';
-  digest: 'sha256' | 'sha384' | 'sha512';
+  digest: Sha;
   saltLength: number;
   expectedKeyType: 'rsa' | 'rsa-pss';
 }
 
 export interface EcdsaSpec {
   family: 'ecdsa';
-  digest: 'sha256' | 'sha384' | 'sha512';
+  digest: Sha;
   expectedKeyType: 'ec';
-  expectedCurve: 'P-256' | 'P-384' | 'P-521';
+  expectedCurve: EcCurve;
   coordinateBytes: number;
 }
 
@@ -78,27 +77,27 @@ export interface EddsaSpec {
 
 export interface HmacSpec {
   family: 'hmac';
-  digest: 'sha256' | 'sha384' | 'sha512';
+  digest: Sha;
   expectedKeyType: 'oct';
 }
 
 export type AlgorithmSpec = RsaPkcs1Spec | RsaPssSpec | EcdsaSpec | EddsaSpec | HmacSpec;
 
 const SPECS: Record<JsfAlgorithm, AlgorithmSpec> = {
-  RS256: { family: 'rsa-pkcs1', digest: 'sha256', expectedKeyType: 'rsa' },
-  RS384: { family: 'rsa-pkcs1', digest: 'sha384', expectedKeyType: 'rsa' },
-  RS512: { family: 'rsa-pkcs1', digest: 'sha512', expectedKeyType: 'rsa' },
-  PS256: { family: 'rsa-pss', digest: 'sha256', saltLength: 32, expectedKeyType: 'rsa' },
-  PS384: { family: 'rsa-pss', digest: 'sha384', saltLength: 48, expectedKeyType: 'rsa' },
-  PS512: { family: 'rsa-pss', digest: 'sha512', saltLength: 64, expectedKeyType: 'rsa' },
-  ES256: { family: 'ecdsa', digest: 'sha256', expectedKeyType: 'ec', expectedCurve: 'P-256', coordinateBytes: 32 },
-  ES384: { family: 'ecdsa', digest: 'sha384', expectedKeyType: 'ec', expectedCurve: 'P-384', coordinateBytes: 48 },
-  ES512: { family: 'ecdsa', digest: 'sha512', expectedKeyType: 'ec', expectedCurve: 'P-521', coordinateBytes: 66 },
+  RS256: { family: 'rsa-pkcs1', digest: 'sha-256', expectedKeyType: 'rsa' },
+  RS384: { family: 'rsa-pkcs1', digest: 'sha-384', expectedKeyType: 'rsa' },
+  RS512: { family: 'rsa-pkcs1', digest: 'sha-512', expectedKeyType: 'rsa' },
+  PS256: { family: 'rsa-pss', digest: 'sha-256', saltLength: 32, expectedKeyType: 'rsa' },
+  PS384: { family: 'rsa-pss', digest: 'sha-384', saltLength: 48, expectedKeyType: 'rsa' },
+  PS512: { family: 'rsa-pss', digest: 'sha-512', saltLength: 64, expectedKeyType: 'rsa' },
+  ES256: { family: 'ecdsa', digest: 'sha-256', expectedKeyType: 'ec', expectedCurve: 'P-256', coordinateBytes: 32 },
+  ES384: { family: 'ecdsa', digest: 'sha-384', expectedKeyType: 'ec', expectedCurve: 'P-384', coordinateBytes: 48 },
+  ES512: { family: 'ecdsa', digest: 'sha-512', expectedKeyType: 'ec', expectedCurve: 'P-521', coordinateBytes: 66 },
   Ed25519: { family: 'eddsa', expectedKeyType: 'ed25519' },
   Ed448: { family: 'eddsa', expectedKeyType: 'ed448' },
-  HS256: { family: 'hmac', digest: 'sha256', expectedKeyType: 'oct' },
-  HS384: { family: 'hmac', digest: 'sha384', expectedKeyType: 'oct' },
-  HS512: { family: 'hmac', digest: 'sha512', expectedKeyType: 'oct' },
+  HS256: { family: 'hmac', digest: 'sha-256', expectedKeyType: 'oct' },
+  HS384: { family: 'hmac', digest: 'sha-384', expectedKeyType: 'oct' },
+  HS512: { family: 'hmac', digest: 'sha-512', expectedKeyType: 'oct' },
 };
 
 export function getAlgorithmSpec(algorithm: string): AlgorithmSpec {
@@ -173,35 +172,30 @@ export function isAsymmetricAlgorithm(algorithm: string): algorithm is JsfAsymme
 }
 
 /**
- * Sign the canonical bytes with the given algorithm and key.
+ * Sign the canonical bytes with the given algorithm and key handle.
  *
  * Returns the signature as raw bytes — the JSF orchestrator is
  * responsible for base64url-encoding the result before embedding
  * it in the envelope.
  */
-export function signBytes(
+export async function signBytes(
   spec: AlgorithmSpec,
   data: Uint8Array,
-  keyObject: KeyObject,
-  keyCurve: string | null,
-): Buffer {
-  assertKeyMatches(spec, keyObject, keyCurve, 'sign');
+  key: PrivateKeyHandle | SymmetricKeyHandle,
+): Promise<Uint8Array> {
+  assertKeyMatches(spec, key, 'sign');
   try {
     switch (spec.family) {
       case 'rsa-pkcs1':
-        return nodeSign(spec.digest, data, keyObject);
+        return await backend.signRsaPkcs1(spec.digest, data, key as PrivateKeyHandle);
       case 'rsa-pss':
-        return nodeSign(spec.digest, data, {
-          key: keyObject,
-          padding: cryptoConstants.RSA_PKCS1_PSS_PADDING,
-          saltLength: spec.saltLength,
-        });
+        return await backend.signRsaPss(spec.digest, data, spec.saltLength, key as PrivateKeyHandle);
       case 'ecdsa':
-        return nodeSign(spec.digest, data, { key: keyObject, dsaEncoding: 'ieee-p1363' });
+        return await backend.signEcdsa(spec.digest, data, key as PrivateKeyHandle);
       case 'eddsa':
-        return nodeSign(null, data, keyObject);
+        return await backend.signEddsa(data, key as PrivateKeyHandle);
       case 'hmac':
-        return createHmac(spec.digest, keyObject).update(data).digest();
+        return await backend.hmacSign(spec.digest, key as SymmetricKeyHandle, data);
     }
   } catch (err) {
     throw new JsfSignError(`Signing with ${spec.family} failed: ${(err as Error).message}`, err);
@@ -214,59 +208,45 @@ export function signBytes(
  * surface as exceptions because those indicate caller bugs rather than
  * signature tampering.
  */
-export function verifyBytes(
+export async function verifyBytes(
   spec: AlgorithmSpec,
   data: Uint8Array,
   signature: Uint8Array,
-  keyObject: KeyObject,
-  keyCurve: string | null,
-): boolean {
-  assertKeyMatches(spec, keyObject, keyCurve, 'verify');
+  key: PublicKeyHandle | SymmetricKeyHandle,
+): Promise<boolean> {
+  assertKeyMatches(spec, key, 'verify');
   try {
     switch (spec.family) {
       case 'rsa-pkcs1':
-        return nodeVerify(spec.digest, data, keyObject, signature);
+        return await backend.verifyRsaPkcs1(spec.digest, data, signature, key as PublicKeyHandle);
       case 'rsa-pss':
-        return nodeVerify(spec.digest, data, {
-          key: keyObject,
-          padding: cryptoConstants.RSA_PKCS1_PSS_PADDING,
-          saltLength: spec.saltLength,
-        }, signature);
+        return await backend.verifyRsaPss(spec.digest, data, spec.saltLength, signature, key as PublicKeyHandle);
       case 'ecdsa':
         // A well-formed IEEE P1363 signature is exactly 2 * coordinateBytes.
         // Reject oddball lengths up front to keep tampered envelopes from
-        // triggering noisy Node errors downstream.
-        if (signature.length !== spec.coordinateBytes * 2) {
-          return false;
-        }
-        return nodeVerify(spec.digest, data, { key: keyObject, dsaEncoding: 'ieee-p1363' }, signature);
+        // triggering noisy errors downstream.
+        if (signature.length !== spec.coordinateBytes * 2) return false;
+        return await backend.verifyEcdsa(spec.digest, data, signature, key as PublicKeyHandle);
       case 'eddsa':
-        return nodeVerify(null, data, keyObject, signature);
-      case 'hmac': {
-        const mac = createHmac(spec.digest, keyObject).update(data).digest();
-        if (mac.length !== signature.length) return false;
-        return timingSafeEqual(mac, signature);
-      }
+        return await backend.verifyEddsa(data, signature, key as PublicKeyHandle);
+      case 'hmac':
+        return await backend.hmacVerify(spec.digest, key as SymmetricKeyHandle, data, signature);
     }
   } catch {
-    // A Node-level exception on verify almost always means the
-    // signature was malformed for the algorithm. Surface as a clean
-    // failure rather than a thrown error.
     return false;
   }
 }
 
 function assertKeyMatches(
   spec: AlgorithmSpec,
-  keyObject: KeyObject,
-  keyCurve: string | null,
+  key: { kind: string; curve: string | null },
   operation: 'sign' | 'verify',
 ): void {
-  const kt = keyObject.type === 'secret' ? 'oct' : keyObject.asymmetricKeyType;
+  const kt = key.kind;
   switch (spec.family) {
     case 'rsa-pkcs1':
     case 'rsa-pss':
-      if (kt !== 'rsa' && kt !== 'rsa-pss') {
+      if (kt !== 'rsa') {
         throw new JsfInputError(`Algorithm requires an RSA key for ${operation}; got ${String(kt)}`);
       }
       break;
@@ -274,9 +254,9 @@ function assertKeyMatches(
       if (kt !== 'ec') {
         throw new JsfInputError(`Algorithm requires an EC key for ${operation}; got ${String(kt)}`);
       }
-      if (keyCurve !== spec.expectedCurve) {
+      if (key.curve !== spec.expectedCurve) {
         throw new JsfInputError(
-          `Algorithm requires EC curve ${spec.expectedCurve} for ${operation}; got ${String(keyCurve)}`,
+          `Algorithm requires EC curve ${spec.expectedCurve} for ${operation}; got ${String(key.curve)}`,
         );
       }
       break;

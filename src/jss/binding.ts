@@ -50,7 +50,7 @@ import type {
   JssVerifierKeyInput,
   JssWrapperState,
 } from './internal-types.js';
-import type { JsonObject, JsonValue, KeyInput, SignatureFormat } from '../types.js';
+import type { JsonObject, JsonValue, JwkPublicKey, KeyInput, SignatureFormat } from '../types.js';
 import { JssEnvelopeError, JssInputError } from '../errors.js';
 import {
   isRegisteredAlgorithm,
@@ -64,7 +64,8 @@ import {
   toPrivateKey,
   toPublicKey,
 } from './pem.js';
-import { X509Certificate, createPublicKey, KeyObject } from 'node:crypto';
+import { backend } from '#crypto-backend';
+import type { PublicKeyHandle } from '../internal/crypto/types.js';
 
 /** Properties JSS reserves on a signaturecore (X.590 § 6.2.1). */
 const JSS_RESERVED = new Set([
@@ -242,7 +243,7 @@ export class JssBinding {
 
   // -- key plumbing ---------------------------------------------------------
 
-  toSigner(input: JssSignerKeyInput): Signer {
+  async toSigner(input: JssSignerKeyInput): Promise<Signer> {
     if (input.signer) return input.signer;
     if (!input.privateKey) {
       throw new JssInputError('Either privateKey or a Signer must be provided');
@@ -255,39 +256,34 @@ export class JssBinding {
       throw new JssInputError(`Unsupported JSS hash algorithm: ${hashAlgorithm}`);
     }
     const algorithm = input.algorithm;
-    const privateKey = toPrivateKey(input.privateKey);
-    // Body has no await; return a resolved promise to satisfy the
-    // async `Signer` contract without an empty `async` keyword.
+    const privateKey = await toPrivateKey(input.privateKey);
     return {
-      sign: (canonicalBytes) => {
-        const digest = hashBytes(hashAlgorithm, canonicalBytes);
-        const sig = signHash(algorithm, hashAlgorithm, digest, privateKey);
-        return Promise.resolve(new Uint8Array(sig));
+      sign: async (canonicalBytes) => {
+        const digest = await hashBytes(hashAlgorithm, canonicalBytes);
+        return signHash(algorithm, hashAlgorithm, digest, privateKey);
       },
     };
   }
 
-  toVerifier(input: JssVerifierKeyInput): Verifier {
+  async toVerifier(input: JssVerifierKeyInput): Promise<Verifier> {
     if (!isRegisteredAlgorithm(input.algorithm)) {
       throw new JssInputError(`Unsupported JSS algorithm: ${input.algorithm}`);
     }
     const algorithm = input.algorithm;
     return {
-      verify: (canonicalBytes, signature) => {
+      verify: async (canonicalBytes, signature) => {
         const hashAlgorithm = (input as { hashAlgorithm?: string }).hashAlgorithm ?? 'sha-256';
         if (!isRegisteredHashAlgorithm(hashAlgorithm)) {
           throw new JssInputError(`Unsupported JSS hash algorithm: ${hashAlgorithm}`);
         }
-        const digest = hashBytes(hashAlgorithm, canonicalBytes);
-        const publicKey = resolveVerifyingKey(input);
-        return Promise.resolve(
-          verifyHash(algorithm, hashAlgorithm, digest, Buffer.from(signature), publicKey),
-        );
+        const digest = await hashBytes(hashAlgorithm, canonicalBytes);
+        const publicKey = await resolveVerifyingKey(input);
+        return verifyHash(algorithm, hashAlgorithm, digest, signature, publicKey);
       },
     };
   }
 
-  resolveEmbeddedPublicKey(input: JssSignerKeyInput): never | null {
+  async resolveEmbeddedPublicKey(input: JssSignerKeyInput): Promise<JwkPublicKey | null> {
     // JSF returns a JWK; JSS uses a PEM body. Return null here so the
     // orchestrator does not stamp a JWK onto the descriptor; the
     // sign-time path puts the PEM body into `extensionValues.public_key`
@@ -348,22 +344,22 @@ export function renderSignaturecore(
  * Public helper for sign.ts: derive the embedded `public_key` PEM body
  * from a `JssSignerInput.public_key` setting.
  */
-export function deriveEmbeddedPublicKeyPemBody(
+export async function deriveEmbeddedPublicKeyPemBody(
   privateKeyInput: KeyInput | undefined,
   publicKeyInput: KeyInput | false | undefined,
-): string | null {
+): Promise<string | null> {
   if (publicKeyInput === false) return null;
   if (publicKeyInput === undefined || publicKeyInput === 'auto') {
     if (!privateKeyInput) return null;
-    const priv = toPrivateKey(privateKeyInput);
-    const pub = createPublicKey(priv);
+    const priv = await toPrivateKey(privateKeyInput);
+    const pub = await priv.publicHandle();
     return pemBodyFromPublicKey(pub);
   }
   // Explicit override: convert any KeyInput to a PEM body.
-  return pemBodyFromPublicKey(toPublicKey(publicKeyInput));
+  return pemBodyFromPublicKey(await toPublicKey(publicKeyInput));
 }
 
-function resolveVerifyingKey(input: JssVerifierKeyInput): KeyObject {
+async function resolveVerifyingKey(input: JssVerifierKeyInput): Promise<PublicKeyHandle> {
   if (input.publicKey !== undefined) return toPublicKey(input.publicKey);
   // No JWK embedded for JSS; instead the JSS sign path provides
   // `embeddedPublicKey` as a PEM body string.
@@ -380,9 +376,22 @@ function resolveVerifyingKey(input: JssVerifierKeyInput): KeyObject {
   );
 }
 
-function certPublicKey(b64Der: string): KeyObject {
-  const der = Buffer.from(b64Der, 'base64');
-  return new X509Certificate(der).publicKey;
+async function certPublicKey(b64Der: string): Promise<PublicKeyHandle> {
+  const der = b64ToBytes(b64Der);
+  return backend.parseCertSpkiPublicKey(der);
+}
+
+function b64ToBytes(s: string): Uint8Array {
+  // Accepts either standard or URL-safe base64.
+  const cleaned = s.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = cleaned + '='.repeat((4 - (cleaned.length % 4)) % 4);
+  if (typeof atob === 'function') {
+    const bin = atob(padded);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  return new Uint8Array(Buffer.from(padded, 'base64'));
 }
 
 export {
