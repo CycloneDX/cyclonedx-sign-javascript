@@ -221,56 +221,67 @@ function isRawBytes(input: unknown): input is Buffer | Uint8Array {
 }
 
 function nodeImportPrivate(input: KeyInput): KeyObject {
-  if (input instanceof KeyObject) {
-    if (input.type === 'private' || input.type === 'secret') return input;
-    throw new Error('KeyObject must be a private or secret key');
-  }
-  if (typeof input === 'string') {
-    const trimmed = input.trim();
-    if (trimmed.startsWith('{')) {
-      return createPrivateKey({ key: JSON.parse(trimmed) as Record<string, unknown>, format: 'jwk' });
-    }
-    return createPrivateKey({ key: trimmed, format: 'pem' });
-  }
-  if (isRawBytes(input)) {
-    // Raw bytes are HMAC key material; PKCS#8 DER decoding is
-    // ambiguous and goes through PEM or JWK explicitly.
-    return createSecretKey(Buffer.isBuffer(input) ? input : Buffer.from(input));
-  }
-  if (isJwkInput(input)) {
-    if (input.kty === 'oct') {
-      if (!input.k) throw new Error('JWK oct missing k');
-      return createSecretKey(Buffer.from(input.k, 'base64url'));
-    }
-    return createPrivateKey({ key: input as unknown as Record<string, unknown>, format: 'jwk' });
-  }
+  if (input instanceof KeyObject) return privateFromKeyObject(input);
+  if (typeof input === 'string') return privateFromString(input);
+  if (isRawBytes(input)) return secretFromBytes(input);
+  if (isJwkInput(input)) return privateFromJwk(input);
   throw new Error('Unsupported private key input');
 }
 
 function nodeImportPublic(input: KeyInput): KeyObject {
-  if (input instanceof KeyObject) {
-    if (input.type === 'public') return input;
-    if (input.type === 'private') return createPublicKey(input);
-    return input;   // secret
-  }
-  if (typeof input === 'string') {
-    const trimmed = input.trim();
-    if (trimmed.startsWith('{')) {
-      return createPublicKey({ key: JSON.parse(trimmed) as Record<string, unknown>, format: 'jwk' });
-    }
-    return createPublicKey({ key: trimmed, format: 'pem' });
-  }
-  if (isRawBytes(input)) {
-    return createSecretKey(Buffer.isBuffer(input) ? input : Buffer.from(input));
-  }
-  if (isJwkInput(input)) {
-    if (input.kty === 'oct') {
-      if (!input.k) throw new Error('JWK oct missing k');
-      return createSecretKey(Buffer.from(input.k, 'base64url'));
-    }
-    return createPublicKey({ key: input as unknown as Record<string, unknown>, format: 'jwk' });
-  }
+  if (input instanceof KeyObject) return publicFromKeyObject(input);
+  if (typeof input === 'string') return publicFromString(input);
+  if (isRawBytes(input)) return secretFromBytes(input);
+  if (isJwkInput(input)) return publicFromJwk(input);
   throw new Error('Unsupported public key input');
+}
+
+function privateFromKeyObject(input: KeyObject): KeyObject {
+  if (input.type === 'private' || input.type === 'secret') return input;
+  throw new Error('KeyObject must be a private or secret key');
+}
+
+function publicFromKeyObject(input: KeyObject): KeyObject {
+  if (input.type === 'public') return input;
+  if (input.type === 'private') return createPublicKey(input);
+  return input;     // secret
+}
+
+function privateFromString(s: string): KeyObject {
+  const trimmed = s.trim();
+  if (trimmed.startsWith('{')) {
+    return createPrivateKey({ key: JSON.parse(trimmed) as Record<string, unknown>, format: 'jwk' });
+  }
+  return createPrivateKey({ key: trimmed, format: 'pem' });
+}
+
+function publicFromString(s: string): KeyObject {
+  const trimmed = s.trim();
+  if (trimmed.startsWith('{')) {
+    return createPublicKey({ key: JSON.parse(trimmed) as Record<string, unknown>, format: 'jwk' });
+  }
+  return createPublicKey({ key: trimmed, format: 'pem' });
+}
+
+function privateFromJwk(jwk: JwkPublicKey): KeyObject {
+  if (jwk.kty === 'oct') return secretFromOctJwk(jwk);
+  return createPrivateKey({ key: jwk as unknown as Record<string, unknown>, format: 'jwk' });
+}
+
+function publicFromJwk(jwk: JwkPublicKey): KeyObject {
+  if (jwk.kty === 'oct') return secretFromOctJwk(jwk);
+  return createPublicKey({ key: jwk as unknown as Record<string, unknown>, format: 'jwk' });
+}
+
+function secretFromBytes(bytes: Buffer | Uint8Array): KeyObject {
+  // Raw bytes are HMAC key material; PKCS#8 DER decoding is ambiguous
+  // and goes through PEM or JWK explicitly.
+  return createSecretKey(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
+}
+
+function secretFromOctJwk(jwk: JwkPublicKey): KeyObject {
+  if (!jwk.k) throw new Error('JWK oct missing k');
+  return createSecretKey(Buffer.from(jwk.k, 'base64url'));
 }
 
 // -- The backend implementation ----------------------------------------------

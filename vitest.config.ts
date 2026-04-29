@@ -14,11 +14,13 @@ export default defineConfig({
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.ts'],
       exclude: [
-        // JSS is a stub that only throws; coverage for it is not a
-        // meaningful signal until the implementation lands.
-        'src/jss/**',
-        // Pure type declarations.
+        // Pure type declarations and barrel re-exports — no runtime
+        // branches to cover. v8 reports these as 0% despite being
+        // imported transitively, which skews the overall number.
         'src/**/types.ts',
+        'src/**/internal-types.ts',
+        'src/**/internal-binding.ts',
+        'src/**/index.ts',
       ],
       // Coverage is uploaded to Codacy but we do not fail the build
       // on thresholds; keep the number visible and let the Codacy

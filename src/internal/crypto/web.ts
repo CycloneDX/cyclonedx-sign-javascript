@@ -476,77 +476,100 @@ async function importPemPrivate(pem: string): Promise<PrivateKeyHandle> {
  * (same heuristic as importEcPublicFromSpki).
  */
 function importEcPrivateFromExplicitPkcs8(der: Uint8Array): PrivateKeyHandle {
-  // Top-level SEQUENCE
+  const ecPrivate = unwrapPkcs8PrivateKey(der);
+  const { dBytes, point } = parseEcPrivateKey(ecPrivate);
+  return new WebPrivateKey(buildEcPrivateJwk(dBytes, point));
+}
+
+/** Walk a PKCS#8 wrapper and return the inner privateKey OCTET STRING bytes. */
+function unwrapPkcs8PrivateKey(der: Uint8Array): Uint8Array {
   const top = readSeq(der, 0);
   let p = top.body;
-  // version INTEGER
   if (der[p] !== 0x02) throw new Error('PKCS#8: expected version INTEGER');
-  p += 1;
-  const verLen = readDerLength(der, p);
-  p = verLen.contentStart + verLen.length;
-  // AlgorithmIdentifier SEQUENCE — skip
+  const ver = readDerLength(der, p + 1);
+  p = ver.contentStart + ver.length;
   if (der[p] !== 0x30) throw new Error('PKCS#8: expected AlgorithmIdentifier');
   const alg = readDerLength(der, p + 1);
   p = alg.contentStart + alg.length;
-  // privateKey OCTET STRING
   if (der[p] !== 0x04) throw new Error('PKCS#8: expected privateKey OCTET STRING');
-  const privInfo = readDerLength(der, p + 1);
-  const ecPrivate = der.subarray(privInfo.contentStart, privInfo.contentStart + privInfo.length);
+  const inner = readDerLength(der, p + 1);
+  return der.subarray(inner.contentStart, inner.contentStart + inner.length);
+}
 
-  // ECPrivateKey SEQUENCE
-  const ecTop = readSeq(ecPrivate, 0);
-  let q = ecTop.body;
-  // version INTEGER
+/** Parse an ECPrivateKey SEQUENCE and return the scalar plus the embedded public point. */
+function parseEcPrivateKey(ecPrivate: Uint8Array): { dBytes: Uint8Array; point: Uint8Array } {
+  const top = readSeq(ecPrivate, 0);
+  let q = top.body;
   if (ecPrivate[q] !== 0x02) throw new Error('ECPrivateKey: expected version INTEGER');
-  q += 1;
-  const ecVerLen = readDerLength(ecPrivate, q);
-  q = ecVerLen.contentStart + ecVerLen.length;
-  // privateKey OCTET STRING
+  const ver = readDerLength(ecPrivate, q + 1);
+  q = ver.contentStart + ver.length;
   if (ecPrivate[q] !== 0x04) throw new Error('ECPrivateKey: expected privateKey OCTET STRING');
-  q += 1;
-  const dLen = readDerLength(ecPrivate, q);
+  const dLen = readDerLength(ecPrivate, q + 1);
   const dBytes = ecPrivate.subarray(dLen.contentStart, dLen.contentStart + dLen.length);
   q = dLen.contentStart + dLen.length;
 
-  // Optional [0] parameters — skip if present.
-  while (q < ecTop.end) {
+  // Walk optional [0] parameters and the [1] EXPLICIT publicKey BIT STRING.
+  while (q < top.end) {
     const tag = ecPrivate[q]!;
     const lenInfo = readDerLength(ecPrivate, q + 1);
     if (tag === 0xa1) {
-      // [1] EXPLICIT publicKey BIT STRING
-      const bitTag = ecPrivate[lenInfo.contentStart]!;
-      if (bitTag !== 0x03) throw new Error('ECPrivateKey: expected publicKey BIT STRING');
-      const bitLen = readDerLength(ecPrivate, lenInfo.contentStart + 1);
-      // First byte after the length is the unused-bits count (0).
-      const point = ecPrivate.subarray(bitLen.contentStart + 1, bitLen.contentStart + bitLen.length);
-      if (point[0] !== 0x04) throw new Error('ECPrivateKey: only uncompressed points are supported');
-      const fieldBytes = (point.length - 1) / 2;
-      const curve: EcCurve = fieldBytes === 32 ? 'P-256'
-        : fieldBytes === 48 ? 'P-384'
-        : fieldBytes === 66 ? 'P-521'
-        : (() => { throw new Error(`EC SPKI: unrecognized field size ${fieldBytes}`); })();
-      const x = point.subarray(1, 1 + fieldBytes);
-      const y = point.subarray(1 + fieldBytes);
-      // The private scalar may be left-padded; pad it to fieldBytes.
-      const dPadded = dBytes.length === fieldBytes
-        ? dBytes
-        : (() => {
-            const out = new Uint8Array(fieldBytes);
-            out.set(dBytes, fieldBytes - dBytes.length);
-            return out;
-          })();
-      const jwk: JwkPublicKey = {
-        kty: 'EC',
-        crv: curve,
-        x: bytesToB64u(x),
-        y: bytesToB64u(y),
-        d: bytesToB64u(dPadded),
-      };
-      return new WebPrivateKey(jwk);
+      return { dBytes, point: extractEcPointFromTagged(ecPrivate, lenInfo.contentStart) };
     }
     q = lenInfo.contentStart + lenInfo.length;
   }
   throw new Error('ECPrivateKey: missing publicKey field — cannot recover x, y');
+}
+
+/** Extract the uncompressed EC point from a `[1] EXPLICIT BIT STRING` content area. */
+function extractEcPointFromTagged(buf: Uint8Array, taggedContentStart: number): Uint8Array {
+  if (buf[taggedContentStart] !== 0x03) {
+    throw new Error('ECPrivateKey: expected publicKey BIT STRING');
+  }
+  const bitLen = readDerLength(buf, taggedContentStart + 1);
+  // First byte after the length is the unused-bits count (always 0).
+  const point = buf.subarray(bitLen.contentStart + 1, bitLen.contentStart + bitLen.length);
+  if (point[0] !== 0x04) {
+    throw new Error('ECPrivateKey: only uncompressed points are supported');
+  }
+  return point;
+}
+
+const EC_FIELD_TO_CURVE: Record<number, EcCurve> = {
+  32: 'P-256',
+  48: 'P-384',
+  66: 'P-521',
+};
+
+/** Map the EC point's coordinate length to its named curve. */
+function curveFromFieldBytes(fieldBytes: number): EcCurve {
+  // eslint-disable-next-line security/detect-object-injection -- fieldBytes is a derived integer; the table is a closed set of allowed widths.
+  const curve = EC_FIELD_TO_CURVE[fieldBytes];
+  if (!curve) throw new Error(`EC SPKI: unrecognized field size ${fieldBytes}`);
+  return curve;
+}
+
+/** Build a private EC JWK (with `d`) from a private scalar plus the uncompressed public point. */
+function buildEcPrivateJwk(dBytes: Uint8Array, point: Uint8Array): JwkPublicKey {
+  const fieldBytes = (point.length - 1) / 2;
+  const curve = curveFromFieldBytes(fieldBytes);
+  const x = point.subarray(1, 1 + fieldBytes);
+  const y = point.subarray(1 + fieldBytes);
+  const dPadded = padLeftToLength(dBytes, fieldBytes);
+  return {
+    kty: 'EC',
+    crv: curve,
+    x: bytesToB64u(x),
+    y: bytesToB64u(y),
+    d: bytesToB64u(dPadded),
+  };
+}
+
+/** Left-pad a byte string with zeros to reach the requested width. No-op if already wide enough. */
+function padLeftToLength(bytes: Uint8Array, width: number): Uint8Array {
+  if (bytes.length === width) return bytes;
+  const out = new Uint8Array(width);
+  out.set(bytes, width - bytes.length);
+  return out;
 }
 
 async function importPemPublic(pem: string): Promise<PublicKeyHandle> {

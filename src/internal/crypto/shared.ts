@@ -86,6 +86,9 @@ export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 function xor(a: Uint8Array, b: Uint8Array): Uint8Array {
+  /* c8 ignore next 3 -- defensive guard; xor is module-private and every
+     caller (mgf1) passes arrays whose lengths come from the same hash
+     length math. Unreachable through any public path. */
   if (a.length !== b.length) {
     throw new Error('xor: inputs must have equal length');
   }
