@@ -90,19 +90,19 @@ export type VerifyResult =
  * CycloneDX 1.x (JSF) or 2.x (JSS).
  */
 export async function sign(subject: JsonObject, options: SignOptions): Promise<JsonObject> {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard for JS callers; the type system already forbids omitting cyclonedxVersion.
-  if (!options || options.cyclonedxVersion === undefined) {
+   
+  if (options?.cyclonedxVersion === undefined) {
     throw new SignatureError(
       'sign() requires options.cyclonedxVersion. ' +
         'Set it to CycloneDxMajor.V1 (JSF, CycloneDX 1.x) or CycloneDxMajor.V2 (JSS, CycloneDX 2.x).',
     );
   }
-  const version = options.cyclonedxVersion as CycloneDxMajor;
+  const version = options.cyclonedxVersion;
   switch (version) {
     case CycloneDxMajor.V1:
-      return signJsf(subject, options as JsfSignOptions);
+      return signJsf(subject, options);
     case CycloneDxMajor.V2:
-      return signJss(subject, options as JssSignOptions);
+      return signJss(subject, options);
     default:
       throw new SignatureError(`Unknown CycloneDX major version: ${String(version)}`);
   }
@@ -133,7 +133,7 @@ export async function verify(
   }
   switch (version) {
     case CycloneDxMajor.V1: {
-      const result = await verifyJsf(subject, options as JsfVerifyOptions);
+      const result = await verifyJsf(subject, options);
       return { ...result, cyclonedxVersion: CycloneDxMajor.V1 };
     }
     case CycloneDxMajor.V2: {

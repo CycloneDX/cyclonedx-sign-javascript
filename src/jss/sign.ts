@@ -71,7 +71,7 @@ export async function sign(
   options: JssSignOptions,
 ): Promise<JsonObject> {
   assertObject(payload, 'sign');
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers
+   
   if (!options || typeof options !== 'object') {
     throw new JssInputError('JSS sign requires an options object');
   }
@@ -88,7 +88,7 @@ export async function sign(
   const existing = extractExisting(payload, signatureProperty);
   const stripped: JsonObject = { ...payload };
   if (existing.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete, security/detect-object-injection
+    // eslint-disable-next-line security/detect-object-injection
     delete stripped[signatureProperty];
   }
 
@@ -102,14 +102,14 @@ export async function sign(
 
   // Reassemble: existing first, new signers appended (X.590 § 7.1.7).
   const out: JsonObject = { ...payload };
-  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete, security/detect-object-injection
+  // eslint-disable-next-line security/detect-object-injection
   delete out[signatureProperty];
   const arr: JsonObject[] = [
     ...existing,
     ...newDescriptors.map((d) => renderSignaturecore(d, { stripValue: false })),
   ];
   // eslint-disable-next-line security/detect-object-injection -- caller-controlled
-  out[signatureProperty] = arr as unknown as JsonValue;
+  out[signatureProperty] = arr;
   return out;
 }
 
@@ -189,7 +189,7 @@ export async function countersign(
   options: JssCountersignOptions,
 ): Promise<JsonObject> {
   assertObject(signedPayload, 'countersign');
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers
+   
   if (!options || typeof options !== 'object' || !options.signer) {
     throw new JssInputError('JSS countersign requires options.signer');
   }
@@ -215,7 +215,7 @@ export async function countersign(
       const result = await verify(signedPayload, {
         signatureProperty,
         publicKeys: trustedKeys,
-      } as JssVerifyOptions);
+      });
       if (result.valid) return null;
       const failed = result.signers
         .filter((s) => !s.valid)
@@ -236,7 +236,7 @@ export async function countersign(
   // permits one nested `signature` per signaturecore. Counter-counter
   // signing recurses via the nested core's own `signature` property.
   const targetDesc = view.signers[targetIndex]!;
-  if (targetDesc.extensionValues && targetDesc.extensionValues[JSS_COUNTERSIG_KEY] !== undefined) {
+  if (targetDesc.extensionValues?.[JSS_COUNTERSIG_KEY] !== undefined) {
     throw new JssInputError(
       'target signaturecore already has a counter signature; ' +
         'remove the existing counter signature, or counter-sign the existing one recursively',
@@ -258,7 +258,7 @@ export async function countersign(
   // Strip the signature property from the payload before passing it to
   // the canonical view builder; the binding re-attaches.
   const stripped: JsonObject = { ...signedPayload };
-  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete, security/detect-object-injection
+  // eslint-disable-next-line security/detect-object-injection
   delete stripped[signatureProperty];
   const canonicalView = JSS_BINDING.buildCounterCanonicalView(
     stripped,
@@ -305,7 +305,7 @@ function stripCounterSig(
 
 function withCounterSig(target: JssSignerDescriptor, counter: JssSignerDescriptor): JssSignerDescriptor {
   const targetExt = { ...(target.extensionValues ?? {}) };
-  targetExt[JSS_COUNTERSIG_KEY] = renderSignaturecore(counter, { stripValue: true }) as unknown as JsonValue;
+  targetExt[JSS_COUNTERSIG_KEY] = renderSignaturecore(counter, { stripValue: true });
   return { ...target, extensionValues: targetExt };
 }
 
@@ -322,7 +322,7 @@ function reassembleWithCounter(
   });
   const out: JsonObject = { ...payload };
   // eslint-disable-next-line security/detect-object-injection -- caller-controlled
-  out[signatureProperty] = arr as unknown as JsonValue;
+  out[signatureProperty] = arr;
   return out;
 }
 
@@ -340,7 +340,7 @@ export async function verify(
   }
 
   const stripped: JsonObject = { ...payload };
-  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete, security/detect-object-injection
+  // eslint-disable-next-line security/detect-object-injection
   delete stripped[signatureProperty];
 
   const outcomes: JssSignerVerifyResult[] = [];
@@ -623,7 +623,7 @@ export function computeCanonicalInputs(
   }
   const signatureProperty = state.signatureProperty ?? DEFAULT_SIGNATURE_PROPERTY;
   const stripped: JsonObject = { ...payload };
-  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete, security/detect-object-injection
+  // eslint-disable-next-line security/detect-object-injection
   delete stripped[signatureProperty];
 
   const out: Uint8Array[] = [];
@@ -635,10 +635,10 @@ export function computeCanonicalInputs(
     if (s.cert_url !== undefined) ext.cert_url = s.cert_url;
     if (s.thumbprint !== undefined) ext.thumbprint = s.thumbprint;
     if (s.metadata) {
-      for (const [k, v] of Object.entries(s.metadata) as [string, JsonValue][]) {
+      for (const [k, v] of Object.entries(s.metadata)) {
         if (k === JSS_HASH_ALGO_KEY || k === JSS_COUNTERSIG_KEY) continue;
         // eslint-disable-next-line security/detect-object-injection -- caller-supplied key checked above for sentinels
-        ext[k] = v;
+        ext[k] = v as JsonValue;
       }
     }
     const desc: JssSignerDescriptor = { algorithm: s.algorithm, extensionValues: ext };
@@ -658,7 +658,7 @@ export function computeCanonicalInputs(
 // -- helpers -----------------------------------------------------------------
 
 function assertObject(payload: JsonObject, op: string): void {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+   
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new JssInputError(`JSS ${op} requires a JSON object payload`);
   }

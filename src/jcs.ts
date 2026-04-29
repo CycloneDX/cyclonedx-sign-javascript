@@ -183,7 +183,7 @@ function needsEscape(code: number): boolean {
 function escapeFor(code: number): string {
   // eslint-disable-next-line security/detect-object-injection -- SHORT_ESCAPES is a static constant table; `code` is a numeric char code.
   const short = SHORT_ESCAPES[code];
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- SHORT_ESCAPES covers only a subset of code < 0x20, so a lookup miss is expected and must fall back to the \uXXXX form.
+   
   if (short !== undefined) return short;
   return '\\u' + code.toString(16).padStart(4, '0');
 }

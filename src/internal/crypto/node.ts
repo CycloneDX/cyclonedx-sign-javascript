@@ -17,6 +17,14 @@ SPDX-License-Identifier: Apache-2.0
 Copyright (c) OWASP Foundation. All Rights Reserved.
 */
 
+/* eslint-disable @typescript-eslint/require-await --
+ * The CryptoBackend contract is async because the Web backend's
+ * crypto.subtle is async-only. The Node backend implements the same
+ * methods using synchronous node:crypto primitives. Making the Node
+ * implementation sync would break interface conformance, so the
+ * methods stay async even though their bodies do not need `await`.
+ */
+
 /**
  * Node `crypto` backend.
  *
@@ -62,9 +70,6 @@ import type { JwkPublicKey, KeyInput } from '../../types.js';
 import {
   buildDigestInfo,
   constantTimeEqual,
-  hashLength,
-  pkcs1V15Pad,
-  pkcs1V15Unpad,
   pssEncode,
   pssVerify,
 } from './shared.js';
@@ -77,7 +82,6 @@ import type {
   PublicKeyHandle,
   Sha,
   SymmetricKeyHandle,
-  VerifyResult,
 } from './types.js';
 
 // -- Hash name mapping --------------------------------------------------------
@@ -306,7 +310,11 @@ export const backend: CryptoBackend = {
     return new NodePublicKey(nodeImportPublic(input));
   },
 
-  async importHmacKey(input: KeyInput, _hash: Sha): Promise<SymmetricKeyHandle> {
+  async importHmacKey(input: KeyInput, hash: Sha): Promise<SymmetricKeyHandle> {
+    // The hash binds at sign/verify time, but the interface declares
+    // it here so consumers can validate fast. We at least sanity-check
+    // the name so a typo surfaces at import rather than first sign.
+    void nodeHashName(hash);
     const ko = nodeImportPrivate(input);
     if (ko.type !== 'secret') {
       throw new Error('HMAC requires symmetric key material');

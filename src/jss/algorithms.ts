@@ -148,11 +148,11 @@ export async function signHash(
     }
     case 'ecdsa': {
       ensureKeyType(privateKey, 'ec', algorithm);
-      // eslint-disable-next-line security/detect-object-injection -- algorithm is JssAlgorithm.
+       
       const curve = ECDSA_CURVES[algorithm as 'ES256' | 'ES384' | 'ES512'];
       ensureCurve(privateKey.curve, curve, algorithm);
       const sig = await backend.signEcdsaPrehashed(curve, hash, privateKey);
-      // eslint-disable-next-line security/detect-object-injection -- algorithm narrowed.
+       
       const expected = ECDSA_FIELD_BYTES[algorithm as 'ES256' | 'ES384' | 'ES512'] * 2;
       if (sig.length !== expected) {
         throw new JssInputError(
@@ -195,10 +195,10 @@ export async function verifyHash(
     }
     case 'ecdsa': {
       ensureKeyType(publicKey, 'ec', algorithm);
-      // eslint-disable-next-line security/detect-object-injection -- algorithm narrowed.
+       
       const curve = ECDSA_CURVES[algorithm as 'ES256' | 'ES384' | 'ES512'];
       ensureCurve(publicKey.curve, curve, algorithm);
-      // eslint-disable-next-line security/detect-object-injection -- algorithm narrowed.
+       
       const expected = ECDSA_FIELD_BYTES[algorithm as 'ES256' | 'ES384' | 'ES512'] * 2;
       if (signature.length !== expected) return false;
       return backend.verifyEcdsaPrehashed(curve, hash, signature, publicKey);

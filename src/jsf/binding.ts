@@ -150,7 +150,7 @@ export class JsfBinding implements JsfBindingContract {
       desc.publicKey = core.publicKey as unknown as JwkPublicKey;
     }
     if (Array.isArray(core.certificatePath)) {
-      desc.certificatePath = (core.certificatePath as JsonValue[]).map(String);
+      desc.certificatePath = (core.certificatePath).map(String);
     }
     if (typeof core.value === 'string') desc.value = core.value;
 

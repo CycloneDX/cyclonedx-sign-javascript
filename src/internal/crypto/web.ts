@@ -17,6 +17,14 @@ SPDX-License-Identifier: Apache-2.0
 Copyright (c) OWASP Foundation. All Rights Reserved.
 */
 
+/* eslint-disable @typescript-eslint/require-await --
+ * The CryptoBackend contract is async because most of crypto.subtle is
+ * async. A few methods on this backend (export helpers, JWK-only
+ * importers, the BigInt RSA paths) happen to complete synchronously,
+ * but the public surface stays Promise-returning so consumers can
+ * mix Node and Web backends without checking which one they have.
+ */
+
 /**
  * Web `crypto.subtle` backend.
  *
@@ -65,14 +73,12 @@ import type { JwkPublicKey, KeyInput } from '../../types.js';
 import {
   buildDigestInfo,
   constantTimeEqual,
-  hashLength,
   pkcs1V15Pad,
   pkcs1V15Unpad,
   pssEncode,
   pssVerify,
 } from './shared.js';
 import {
-  bytesToBigInt,
   decodeJwkBigInt,
   modulusBits as bigintModulusBits,
   rsaPrivate,
@@ -87,7 +93,6 @@ import type {
   PublicKeyHandle,
   Sha,
   SymmetricKeyHandle,
-  VerifyResult,
 } from './types.js';
 
 // -- Subtle helpers ----------------------------------------------------------
@@ -123,7 +128,7 @@ function getSubtle(): SubtleCrypto {
   // globalThis.crypto.subtle is the standard surface across browsers,
   // Node 20+, Deno, and modern Workers runtimes.
   const c = (globalThis as { crypto?: Crypto }).crypto;
-  if (!c || !c.subtle) {
+  if (!c?.subtle) {
     throw new Error('Web crypto backend selected but globalThis.crypto.subtle is unavailable');
   }
   return c.subtle;
@@ -293,7 +298,7 @@ function subtleAlgoForExport(kind: KeyKind, curve: EcCurve | EdCurve | null): Su
   // The hash is irrelevant for SPKI export so we pick a stable default.
   if (kind === 'rsa') return { name: 'RSA-PSS', hash: 'SHA-256' };
   if (kind === 'ec') return { name: 'ECDSA', namedCurve: SUBTLE_CURVE_NAMES[(curve as EcCurve)] };
-  if (kind === 'ed25519') return { name: 'Ed25519' } as AlgorithmIdentifier;
+  if (kind === 'ed25519') return { name: 'Ed25519' };
   if (kind === 'ed448') throw new Error('Ed448 has no Subtle support; cannot export via Subtle');
   throw new Error(`No Subtle algorithm mapping for ${kind}`);
 }
@@ -321,7 +326,7 @@ function parsePem(pem: string): { label: string; der: Uint8Array } {
 
 function wrapPem(der: Uint8Array, label: string): string {
   let binary = '';
-  for (let i = 0; i < der.length; i += 1) binary += String.fromCharCode(der[i]!);
+  for (const byte of der) binary += String.fromCharCode(byte);
   const b64 = btoa(binary);
   const lines = [`-----BEGIN ${label}-----`];
   for (let i = 0; i < b64.length; i += 64) {
@@ -601,7 +606,7 @@ async function importPemPublic(pem: string): Promise<PublicKeyHandle> {
 function subtleImportAlgo(kind: KeyKind, curve: EcCurve | EdCurve | null): SubtleAlgo {
   if (kind === 'rsa') return { name: 'RSA-PSS', hash: 'SHA-256' };
   if (kind === 'ec') return { name: 'ECDSA', namedCurve: SUBTLE_CURVE_NAMES[(curve as EcCurve)] };
-  if (kind === 'ed25519') return { name: 'Ed25519' } as AlgorithmIdentifier;
+  if (kind === 'ed25519') return { name: 'Ed25519' };
   throw new Error(`No Subtle algorithm for kind=${kind}`);
 }
 
@@ -735,7 +740,6 @@ function importEd448PublicFromSpki(der: Uint8Array): PublicKeyHandle {
 
 /** Find the deepest OCTET STRING and return its contents. */
 function extractInnermostOctetString(der: Uint8Array): Uint8Array {
-  let i = 0;
   let last: Uint8Array | null = null;
   // Walk top-level SEQUENCE children.
   const top = readSeq(der, 0);
@@ -798,7 +802,7 @@ function readDerLength(der: Uint8Array, p: number): { contentStart: number; leng
 
 function bytesToB64u(bytes: Uint8Array): string {
   let bin = '';
-  for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]!);
+  for (const byte of bytes) bin += String.fromCharCode(byte);
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
@@ -867,7 +871,10 @@ export const backend: CryptoBackend = {
     throw new Error('Unsupported public key input on web backend');
   },
 
-  async importHmacKey(input: KeyInput, _hash: Sha): Promise<SymmetricKeyHandle> {
+  async importHmacKey(input: KeyInput, hash: Sha): Promise<SymmetricKeyHandle> {
+    // Sanity-check the hash name so a typo surfaces here rather than
+    // at first sign / verify.
+    void subtleHashName(hash);
     if (input instanceof Uint8Array) return new WebSymmetricKey(input);
     if (isJwkInput(input) && input.kty === 'oct') {
       if (!input.k) throw new Error('JWK oct missing k');
@@ -928,8 +935,8 @@ export const backend: CryptoBackend = {
     }
     // Ed25519: prefer Subtle when available; fall back to noble.
     try {
-      const ck = await wp.getCryptoKey({ name: 'Ed25519' } as AlgorithmIdentifier, ['sign']);
-      return new Uint8Array(await getSubtle().sign({ name: 'Ed25519' } as AlgorithmIdentifier, ck, message));
+      const ck = await wp.getCryptoKey({ name: 'Ed25519' }, ['sign']);
+      return new Uint8Array(await getSubtle().sign({ name: 'Ed25519' }, ck, message));
     } catch {
       const seed = b64uToBytes(String(wp.jwk.d));
       return new Uint8Array(ed25519.sign(message, seed));
@@ -942,8 +949,8 @@ export const backend: CryptoBackend = {
       try { return ed448.verify(signature, message, x); } catch { return false; }
     }
     try {
-      const ck = await wp.getCryptoKey({ name: 'Ed25519' } as AlgorithmIdentifier, ['verify']);
-      return getSubtle().verify({ name: 'Ed25519' } as AlgorithmIdentifier, ck, signature, message);
+      const ck = await wp.getCryptoKey({ name: 'Ed25519' }, ['verify']);
+      return getSubtle().verify({ name: 'Ed25519' }, ck, signature, message);
     } catch {
       const x = b64uToBytes(String(wp.jwk.x));
       try { return ed25519.verify(signature, message, x); } catch { return false; }

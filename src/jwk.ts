@@ -81,7 +81,7 @@ export async function exportPublicJwk(input: KeyInput): Promise<JwkPublicKey> {
     throw new JsfKeyError('HMAC keys must not be embedded in a JSF envelope');
   }
   const raw = await handle.exportJwk();
-  return sanitizePublicJwk(raw as Record<string, unknown>);
+  return sanitizePublicJwk(raw);
 }
 
 /**

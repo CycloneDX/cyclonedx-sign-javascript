@@ -17,6 +17,14 @@ SPDX-License-Identifier: Apache-2.0
 Copyright (c) OWASP Foundation. All Rights Reserved.
 */
 
+/* eslint-disable @typescript-eslint/require-await --
+ * Binding methods are async to satisfy the `JsfBindingContract`-style
+ * shape consumed by adapter packages (HSM, KMS). A few methods on this
+ * binding (resolveEmbeddedPublicKey, the eager-construction toVerifier)
+ * complete synchronously; their return type stays Promise so the
+ * binding remains drop-in compatible with future async work.
+ */
+
 /**
  * JSS format binding (ITU-T X.590, 10/2023).
  *
@@ -110,7 +118,7 @@ export class JssBinding {
       if (!el || typeof el !== 'object' || Array.isArray(el)) {
         throw new JssEnvelopeError(`${signatureProperty}[${i}] must be a signaturecore object`);
       }
-      return this.descriptorFromWire(el as JsonObject, {});
+      return this.descriptorFromWire(el, {});
     });
     // Always 'multi' from the orchestrator's perspective; single = length 1.
     const mode = signers.length === 1 ? 'single' : 'multi';
@@ -136,7 +144,7 @@ export class JssBinding {
     const ext: Record<string, JsonValue> = { [HASH_ALGO_KEY]: core.hash_algorithm };
     if (typeof core.public_key === 'string') ext.public_key = core.public_key;
     if (Array.isArray(core.public_cert_chain)) {
-      ext.public_cert_chain = core.public_cert_chain as JsonValue[];
+      ext.public_cert_chain = core.public_cert_chain;
     }
     if (typeof core.cert_url === 'string') ext.cert_url = core.cert_url;
     if (typeof core.thumbprint === 'string') ext.thumbprint = core.thumbprint;
@@ -153,7 +161,7 @@ export class JssBinding {
 
     // Counter signature (nested `signature` property).
     if (core.signature && typeof core.signature === 'object' && !Array.isArray(core.signature)) {
-      ext[COUNTERSIG_KEY] = core.signature as JsonObject;
+      ext[COUNTERSIG_KEY] = core.signature;
     }
 
     desc.extensionValues = ext;
@@ -223,7 +231,7 @@ export class JssBinding {
     if (!ev) return null;
     const counterWire = ev[COUNTERSIG_KEY];
     if (!counterWire || typeof counterWire !== 'object' || Array.isArray(counterWire)) return null;
-    return this.descriptorFromWire(counterWire as JsonObject, {});
+    return this.descriptorFromWire(counterWire, {});
   }
 
   // -- emit -----------------------------------------------------------------
@@ -312,7 +320,7 @@ export function renderSignaturecore(
 
   if (typeof ext.public_key === 'string') core.public_key = ext.public_key;
   if (Array.isArray(ext.public_cert_chain)) {
-    core.public_cert_chain = ext.public_cert_chain as JsonValue;
+    core.public_cert_chain = ext.public_cert_chain;
   }
   if (typeof ext.cert_url === 'string') core.cert_url = ext.cert_url;
   if (typeof ext.thumbprint === 'string') core.thumbprint = ext.thumbprint;
@@ -333,7 +341,7 @@ export function renderSignaturecore(
   // Nested counter signature.
   const counterWire = ext[COUNTERSIG_KEY];
   if (counterWire && typeof counterWire === 'object' && !Array.isArray(counterWire)) {
-    core.signature = counterWire as JsonObject;
+    core.signature = counterWire;
   }
 
   if (!opts.stripValue && d.value !== undefined) core.value = d.value;

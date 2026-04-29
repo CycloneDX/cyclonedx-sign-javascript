@@ -44,7 +44,7 @@ import type {
   JsfSignerDescriptor,
   JsfWrapperState,
 } from "./internal-types.js";
-import type { JsfSignerKeyInput, JsfVerifierKeyInput } from "./internal-binding.js";
+import type { JsfSignerKeyInput } from "./internal-binding.js";
 import { isJsfReservedWord } from "./reserved.js";
 import { JSF_BINDING } from './binding.js';
 import {
@@ -72,7 +72,7 @@ const DEFAULT_SIGNATURE_PROPERTY = 'signature';
 
 export async function sign(payload: JsonObject, options: JsfSignOptions): Promise<JsonObject> {
   assertObject(payload, 'sign');
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers
+   
   if (!options || typeof options !== 'object') {
     throw new JsfInputError('JSF sign requires an options object');
   }
@@ -126,7 +126,7 @@ export async function verify(
     payload,
     binding: JSF_BINDING,
     signatureProperty,
-    publicKeys: publicKeys as ReadonlyMap<number, JsfVerifierKeyInput['publicKey']> | undefined,
+    publicKeys: publicKeys,
     allowedAlgorithms: options.allowedAlgorithms,
     requireEmbeddedPublicKey: options.requireEmbeddedPublicKey,
     policy: options.policy,
@@ -240,7 +240,7 @@ async function appendInternal(
       const result = await verify(signedPayload, {
         signatureProperty,
         publicKeys: trustedKeys,
-      } as JsfVerifyOptions);
+      });
       if (result.valid) return null;
       const failed = result.signers
         .filter((s) => !s.valid)
@@ -306,7 +306,7 @@ function validateAppendExtensions(
 
 function payloadWithoutSignature(payload: JsonObject, signatureProperty: string): JsonObject {
   const out: JsonObject = { ...payload };
-  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete, security/detect-object-injection -- caller-controlled property name
+  // eslint-disable-next-line security/detect-object-injection -- caller-controlled property name
   delete out[signatureProperty];
   return out;
 }
@@ -378,7 +378,7 @@ function collectExtensionValuesFromCore(core: JsonObject): Record<string, JsonVa
     const v = core[k];
     if (v === undefined) continue;
     // eslint-disable-next-line security/detect-object-injection -- k from Object.keys
-    out[k] = v as JsonValue;
+    out[k] = v;
     any = true;
   }
   return any ? out : undefined;
@@ -387,7 +387,7 @@ function collectExtensionValuesFromCore(core: JsonObject): Record<string, JsonVa
 // -- internals ---------------------------------------------------------------
 
 function assertObject(payload: JsonObject, op: string): void {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard against JS callers
+   
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new JsfInputError(`JSF ${op} requires a JSON object payload`);
   }

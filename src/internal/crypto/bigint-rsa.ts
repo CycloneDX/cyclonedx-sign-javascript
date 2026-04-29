@@ -54,9 +54,8 @@ Copyright (c) OWASP Foundation. All Rights Reserved.
 /** Convert a Uint8Array (big-endian) into a BigInt. */
 export function bytesToBigInt(bytes: Uint8Array): bigint {
   let n = 0n;
-  for (let i = 0; i < bytes.length; i += 1) {
-    // eslint-disable-next-line security/detect-object-injection -- counted loop bounded by length.
-    n = (n << 8n) | BigInt(bytes[i]!);
+  for (const byte of bytes) {
+    n = (n << 8n) | BigInt(byte);
   }
   return n;
 }

@@ -25,7 +25,7 @@ Copyright (c) OWASP Foundation. All Rights Reserved.
  * KeyInput) live in ../types.ts and core types live in ../core/types.ts.
  */
 
-import type { JsonObject, JsonValue, JwkPublicKey, KeyInput } from '../types.js';
+import type { JsonValue, JwkPublicKey, KeyInput } from '../types.js';
 import type { Signer } from '../core/signer.js';
 import type { VerifyPolicy } from '../core/policy.js';
 import type { JsfEnvelopeMode as EnvelopeMode } from './internal-types.js';

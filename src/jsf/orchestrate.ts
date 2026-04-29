@@ -31,7 +31,7 @@ import { canonicalize } from '../jcs.js';
 import { decodeBase64Url, encodeBase64Url } from '../base64url.js';
 import { applyPolicy } from '../core/policy.js';
 import type { VerifyPolicy } from '../core/policy.js';
-import type { JsonObject, JsonValue } from '../types.js';
+import type { JsonObject } from '../types.js';
 import type {
   JsfEnvelopeMode,
   JsfEnvelopeOptions,
@@ -156,7 +156,7 @@ export async function verifyEnvelope(
   if (view === null) {
     raiseEnvelope(`Payload has no "${signatureProperty}" property`);
   }
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- raiseEnvelope above never returns
+   
   const v = view!;
   const state: JsfWrapperState = {
     mode: v.mode,
@@ -219,7 +219,7 @@ export async function verifyEnvelope(
     if (desc.publicKey !== undefined) outcome.publicKey = desc.publicKey;
     if (desc.certificatePath !== undefined) outcome.certificatePath = [...desc.certificatePath];
     if (desc.extensionValues !== undefined) {
-      outcome.extensionValues = { ...desc.extensionValues } as Record<string, JsonValue>;
+      outcome.extensionValues = { ...desc.extensionValues };
     }
 
     if (allowedAlgorithms && !allowedAlgorithms.includes(desc.algorithm)) {
@@ -254,7 +254,7 @@ export async function verifyEnvelope(
     if (desc.certificatePath !== undefined)
       verifierInput.certificatePath = desc.certificatePath;
 
-    let verifier;
+    let verifier!: Awaited<ReturnType<typeof binding.toVerifier>>;
     try {
       verifier = await binding.toVerifier(verifierInput);
     } catch (e) {
@@ -277,7 +277,7 @@ export async function verifyEnvelope(
     const bytes = canonicalize(view2);
     let ok = false;
     try {
-      ok = await verifier!.verify(bytes, signatureBytes);
+      ok = await verifier.verify(bytes, signatureBytes);
     } catch (e) {
       outcome.errors.push(`verifier threw: ${(e as Error).message}`);
     }
