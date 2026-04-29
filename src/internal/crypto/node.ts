@@ -192,6 +192,18 @@ class NodeSymmetricKey implements SymmetricKeyHandle {
   }
 }
 
+/**
+ * Accepted RSA modulus size range, mirroring the Web backend so a key
+ * accepted on one backend is accepted on the other. The lower bound
+ * is the NIST SP 800-131A retired threshold (1024 bits) plus one bit
+ * to land squarely at 2048; the upper bound matches OpenSSL's default
+ * `OPENSSL_RSA_MAX_MODULUS_BITS` and bounds the cost of every
+ * modulus-driven operation, defending against CWE-400 DoS via
+ * attacker-supplied embedded keys.
+ */
+const MIN_RSA_MODULUS_BITS = 2048;
+const MAX_RSA_MODULUS_BITS = 16384;
+
 function describeKey(keyObject: KeyObject): {
   kind: KeyKind;
   curve: EcCurve | EdCurve | null;
@@ -203,6 +215,12 @@ function describeKey(keyObject: KeyObject): {
   const akt = keyObject.asymmetricKeyType;
   if (akt === 'rsa' || akt === 'rsa-pss') {
     const bits = keyObject.asymmetricKeyDetails?.modulusLength ?? null;
+    if (bits !== null && (bits < MIN_RSA_MODULUS_BITS || bits > MAX_RSA_MODULUS_BITS)) {
+      throw new Error(
+        `RSA modulus size ${bits} bits is outside the accepted range ` +
+          `${MIN_RSA_MODULUS_BITS}..${MAX_RSA_MODULUS_BITS} bits`,
+      );
+    }
     return { kind: 'rsa', curve: null, rsaModulusBits: bits };
   }
   if (akt === 'ec') {

@@ -124,6 +124,19 @@ const NOBLE_FIELD_BYTES: Record<EcCurve, number> = {
   'P-521': 66,
 };
 
+/**
+ * Accepted RSA modulus size range. The lower bound is just above the
+ * NIST SP 800-131A retired threshold (1024 bits) so the library
+ * refuses keys it cannot meaningfully protect. The upper bound matches
+ * the OpenSSL `OPENSSL_RSA_MAX_MODULUS_BITS` default and bounds the
+ * cost of every modulus-driven operation (BigInt modPow, EMSA-PSS
+ * encoding, MGF1 mask generation) to a fixed worst case. Without a
+ * cap, a verifier handed an envelope with a multi-megabit embedded
+ * key would burn CPU and memory until OOM (CWE-400).
+ */
+const MIN_RSA_MODULUS_BITS = 2048;
+const MAX_RSA_MODULUS_BITS = 16384;
+
 function getSubtle(): SubtleCrypto {
   // globalThis.crypto.subtle is the standard surface across browsers,
   // Node 20+, Deno, and modern Workers runtimes.
@@ -264,7 +277,14 @@ function describeJwk(jwk: JwkPublicKey): {
   if (jwk.kty === 'RSA') {
     if (!jwk.n) throw new Error('RSA JWK missing n');
     const n = decodeJwkBigInt(jwk.n);
-    return { kind: 'rsa', curve: null, rsaModulusBits: bigintModulusBits(n) };
+    const bits = bigintModulusBits(n);
+    if (bits < MIN_RSA_MODULUS_BITS || bits > MAX_RSA_MODULUS_BITS) {
+      throw new Error(
+        `RSA modulus size ${bits} bits is outside the accepted range ` +
+          `${MIN_RSA_MODULUS_BITS}..${MAX_RSA_MODULUS_BITS} bits`,
+      );
+    }
+    return { kind: 'rsa', curve: null, rsaModulusBits: bits };
   }
   if (jwk.kty === 'EC') {
     const crv = (jwk.crv ?? '') as EcCurve;
@@ -406,9 +426,18 @@ function detectDerAlgorithm(der: Uint8Array, isPrivate: boolean): {
 }
 
 function skipDerLength(der: Uint8Array, p: number): number {
+  if (p >= der.length) throw new Error('DER: truncated length');
   const first = der[p]!;
   if (first < 0x80) return p + 1;
   const numLen = first & 0x7f;
+  // Mirror readDerLength's bounds: indefinite-length is forbidden in
+  // DER and lengths over 4 octets are a DoS risk.
+  if (numLen === 0 || numLen > 4) {
+    throw new Error('DER: unsupported long-form length');
+  }
+  if (p + 1 + numLen > der.length) {
+    throw new Error('DER: truncated long-form length');
+  }
   return p + 1 + numLen;
 }
 
@@ -784,18 +813,52 @@ function extractFirstBitString(der: Uint8Array): Uint8Array {
 }
 
 function readSeq(der: Uint8Array, offset: number): { body: number; end: number } {
-  if (der[offset] !== 0x30) throw new Error('DER: expected SEQUENCE');
+  if (offset >= der.length || der[offset] !== 0x30) {
+    throw new Error('DER: expected SEQUENCE');
+  }
   const len = readDerLength(der, offset + 1);
   return { body: len.contentStart, end: len.contentStart + len.length };
 }
 
+/**
+ * Maximum DER length value we will accept. ASN.1 DER allows a multi
+ * byte length of up to 127 octets (0x84..0xfe), but no real-world
+ * X.509 / PKCS#8 / SPKI structure exceeds 4 GiB. Capping at
+ * `2^31 - 1` keeps every length expressible as a non-negative int32,
+ * which JavaScript bitwise ops cannot represent without sign
+ * extension, and matches typical OpenSSL / Bouncy Castle limits.
+ */
+const MAX_DER_LENGTH = 0x7fffffff;
+
 function readDerLength(der: Uint8Array, p: number): { contentStart: number; length: number } {
+  if (p >= der.length) throw new Error('DER: truncated length');
   const first = der[p]!;
-  if (first < 0x80) return { contentStart: p + 1, length: first };
+  if (first < 0x80) {
+    if (p + 1 + first > der.length) {
+      throw new Error('DER: short-form length exceeds buffer');
+    }
+    return { contentStart: p + 1, length: first };
+  }
   const numLen = first & 0x7f;
+  // 0 => BER indefinite-length form, forbidden in DER.
+  // > 4 => length > 4 GiB, which is both unrealistic and a DoS risk.
+  if (numLen === 0 || numLen > 4) {
+    throw new Error('DER: unsupported long-form length');
+  }
+  if (p + 1 + numLen > der.length) {
+    throw new Error('DER: truncated long-form length');
+  }
+  // Use multiplication, not bit shift, so the accumulator stays in
+  // the 53-bit safe-integer range and never sign-extends.
   let length = 0;
   for (let i = 0; i < numLen; i += 1) {
-    length = (length << 8) | der[p + 1 + i]!;
+    length = length * 0x100 + der[p + 1 + i]!;
+  }
+  if (length > MAX_DER_LENGTH) {
+    throw new Error('DER: length exceeds maximum allowed');
+  }
+  if (p + 1 + numLen + length > der.length) {
+    throw new Error('DER: declared length exceeds buffer');
   }
   return { contentStart: p + 1 + numLen, length };
 }
