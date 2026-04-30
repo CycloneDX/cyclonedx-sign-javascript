@@ -434,8 +434,10 @@ describe('jwk.ts: oct-JWK exportPublicJwk rejection', () => {
 
   it('exportPublicJwk on an oct JWK is rejected', async () => {
     const { exportPublicJwk } = await import('../../src/jwk.js');
+    // Error wording is now "oct keys are symmetric, not public" —
+    // the rejection happens at importPublicKey before exportJwk runs.
     await expect(exportPublicJwk({ kty: 'oct', k: 'AQID' } as never))
-      .rejects.toThrow(/HMAC/i);
+      .rejects.toThrow(/symmetric|HMAC|not public/i);
   });
 });
 
