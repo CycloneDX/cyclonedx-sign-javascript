@@ -125,8 +125,20 @@ describe('Node backend: key import dispatchers', () => {
     await expect(nodeBackend.importPublicKey(42 as never)).rejects.toThrow(/Unsupported/);
   });
 
-  it('importPrivateKey rejects an oct JWK without k', async () => {
-    await expect(nodeBackend.importPrivateKey({ kty: 'oct' } as never)).rejects.toThrow(/k/);
+  it('importPrivateKey rejects oct JWKs (HMAC material belongs on importHmacKey)', async () => {
+    // Either with or without `k`. The asymmetric importer should not
+    // tolerate symmetric material at all — the old behavior silently
+    // wrapped a secret KeyObject as an asymmetric handle and surfaced
+    // a confusing error far downstream at sign time.
+    await expect(nodeBackend.importPrivateKey({ kty: 'oct' } as never))
+      .rejects.toThrow(/importHmacKey|symmetric/i);
+    await expect(nodeBackend.importPrivateKey({ kty: 'oct', k: 'AQID' } as never))
+      .rejects.toThrow(/importHmacKey|symmetric/i);
+  });
+
+  it('importHmacKey still rejects an oct JWK that is missing k', async () => {
+    await expect(nodeBackend.importHmacKey({ kty: 'oct' } as never, 'sha-256'))
+      .rejects.toThrow(/k/);
   });
 
   it('importHmacKey rejects an asymmetric KeyObject', async () => {

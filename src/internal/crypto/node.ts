@@ -242,37 +242,126 @@ function isRawBytes(input: unknown): input is Buffer | Uint8Array {
   return Buffer.isBuffer(input) || input instanceof Uint8Array;
 }
 
+/**
+ * Asymmetric private-key dispatcher.
+ *
+ * Rejects inputs that name symmetric (HMAC) material. Without these
+ * gates the helper would silently wrap a `secret` KeyObject as a
+ * `NodePrivateKey`, mirroring an asymmetry the Web backend already
+ * fails fast on. The downstream sign primitives (`signRsaPkcs1`,
+ * `signEcdsa`, `signEddsa`) cast to `NodePrivateKey` and call
+ * `nodeSign(...)` against the wrapped KeyObject, which would throw a
+ * cryptic `node:crypto` error far from the original caller. Symmetric
+ * inputs belong on `importHmacKey` and are routed through
+ * `nodeImportHmac` instead.
+ */
 function nodeImportPrivate(input: KeyInput): KeyObject {
-  if (input instanceof KeyObject) return privateFromKeyObject(input);
+  if (input instanceof KeyObject) {
+    if (input.type === 'private') return input;
+    throw new Error(
+      `importPrivateKey requires a private KeyObject; got "${input.type}". ` +
+        'Use importHmacKey for symmetric (secret) material.',
+    );
+  }
   if (typeof input === 'string') return privateFromString(input);
-  if (isRawBytes(input)) return secretFromBytes(input);
-  if (isJwkInput(input)) return privateFromJwk(input);
+  if (isRawBytes(input)) {
+    throw new Error('Raw byte input is for HMAC; pass a JWK or PEM for asymmetric keys');
+  }
+  if (isJwkInput(input)) {
+    if (input.kty === 'oct') {
+      throw new Error('Use importHmacKey for symmetric material');
+    }
+    return privateFromJwk(input);
+  }
   throw new Error('Unsupported private key input');
 }
 
+/**
+ * Asymmetric public-key dispatcher.
+ *
+ * Same rationale as `nodeImportPrivate`. The previous `secret`
+ * pass-through in `publicFromKeyObject` and the oct-JWK fallthrough in
+ * `publicFromJwk` produced `NodePublicKey` wrappers around symmetric
+ * material; verify primitives would then call `nodeVerify` against a
+ * secret KeyObject and fail with a misleading error. Now mirrored to
+ * the Web backend, which errors with `'oct keys are symmetric, not
+ * public'` and `'Raw byte input is for HMAC ...'` for the same shapes.
+ *
+ * A private KeyObject is still accepted: `createPublicKey()` derives
+ * the public half (this is the auto-public path the JSF binding uses
+ * when `publicKey: 'auto'`).
+ */
 function nodeImportPublic(input: KeyInput): KeyObject {
-  if (input instanceof KeyObject) return publicFromKeyObject(input);
+  if (input instanceof KeyObject) {
+    if (input.type === 'public') return input;
+    if (input.type === 'private') return createPublicKey(input);
+    throw new Error(
+      `importPublicKey requires a public or private KeyObject; got "${input.type}". ` +
+        'Use importHmacKey for symmetric (secret) material.',
+    );
+  }
   if (typeof input === 'string') return publicFromString(input);
-  if (isRawBytes(input)) return secretFromBytes(input);
-  if (isJwkInput(input)) return publicFromJwk(input);
+  if (isRawBytes(input)) {
+    throw new Error('Raw byte input is for HMAC; pass a JWK or PEM for asymmetric keys');
+  }
+  if (isJwkInput(input)) {
+    if (input.kty === 'oct') {
+      throw new Error('oct keys are symmetric, not public');
+    }
+    return publicFromJwk(input);
+  }
   throw new Error('Unsupported public key input');
 }
 
-function privateFromKeyObject(input: KeyObject): KeyObject {
-  if (input.type === 'private' || input.type === 'secret') return input;
-  throw new Error('KeyObject must be a private or secret key');
-}
-
-function publicFromKeyObject(input: KeyObject): KeyObject {
-  if (input.type === 'public') return input;
-  if (input.type === 'private') return createPublicKey(input);
-  return input;     // secret
+/**
+ * HMAC dispatcher. Accepts only symmetric inputs:
+ *
+ *   - `Uint8Array` / `Buffer` raw key bytes
+ *   - JWK with `kty: 'oct'` (object or JSON-string form)
+ *   - secret `KeyObject`
+ *
+ * Decoupled from `nodeImportPrivate` so that tightening the asymmetric
+ * dispatcher does not break HMAC import.
+ */
+function nodeImportHmac(input: KeyInput): KeyObject {
+  if (input instanceof KeyObject) {
+    if (input.type !== 'secret') {
+      throw new Error(
+        `importHmacKey requires symmetric (secret) key material; got a "${input.type}" KeyObject. ` +
+          'Use importPrivateKey / importPublicKey for asymmetric keys.',
+      );
+    }
+    return input;
+  }
+  if (isRawBytes(input)) return secretFromBytes(input);
+  if (isJwkInput(input)) {
+    if (input.kty !== 'oct') {
+      throw new Error('HMAC JWK must have kty=oct');
+    }
+    return secretFromOctJwk(input);
+  }
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (trimmed.startsWith('{')) {
+      const parsed = JSON.parse(trimmed) as JwkPublicKey;
+      if (parsed.kty !== 'oct') {
+        throw new Error('HMAC JWK must have kty=oct');
+      }
+      return secretFromOctJwk(parsed);
+    }
+    throw new Error('HMAC import does not accept PEM; pass a JWK oct or raw bytes');
+  }
+  throw new Error('Unsupported HMAC key input');
 }
 
 function privateFromString(s: string): KeyObject {
   const trimmed = s.trim();
   if (trimmed.startsWith('{')) {
-    return createPrivateKey({ key: JSON.parse(trimmed) as Record<string, unknown>, format: 'jwk' });
+    const parsed = JSON.parse(trimmed) as JwkPublicKey;
+    if (parsed.kty === 'oct') {
+      throw new Error('Use importHmacKey for symmetric material');
+    }
+    return createPrivateKey({ key: parsed as unknown as Record<string, unknown>, format: 'jwk' });
   }
   return createPrivateKey({ key: trimmed, format: 'pem' });
 }
@@ -280,18 +369,20 @@ function privateFromString(s: string): KeyObject {
 function publicFromString(s: string): KeyObject {
   const trimmed = s.trim();
   if (trimmed.startsWith('{')) {
-    return createPublicKey({ key: JSON.parse(trimmed) as Record<string, unknown>, format: 'jwk' });
+    const parsed = JSON.parse(trimmed) as JwkPublicKey;
+    if (parsed.kty === 'oct') {
+      throw new Error('oct keys are symmetric, not public');
+    }
+    return createPublicKey({ key: parsed as unknown as Record<string, unknown>, format: 'jwk' });
   }
   return createPublicKey({ key: trimmed, format: 'pem' });
 }
 
 function privateFromJwk(jwk: JwkPublicKey): KeyObject {
-  if (jwk.kty === 'oct') return secretFromOctJwk(jwk);
   return createPrivateKey({ key: jwk as unknown as Record<string, unknown>, format: 'jwk' });
 }
 
 function publicFromJwk(jwk: JwkPublicKey): KeyObject {
-  if (jwk.kty === 'oct') return secretFromOctJwk(jwk);
   return createPublicKey({ key: jwk as unknown as Record<string, unknown>, format: 'jwk' });
 }
 
@@ -333,11 +424,7 @@ export const backend: CryptoBackend = {
     // it here so consumers can validate fast. We at least sanity-check
     // the name so a typo surfaces at import rather than first sign.
     void nodeHashName(hash);
-    const ko = nodeImportPrivate(input);
-    if (ko.type !== 'secret') {
-      throw new Error('HMAC requires symmetric key material');
-    }
-    return new NodeSymmetricKey(ko);
+    return new NodeSymmetricKey(nodeImportHmac(input));
   },
 
   async parseCertSpkiPublicKey(certDer: Uint8Array): Promise<PublicKeyHandle> {

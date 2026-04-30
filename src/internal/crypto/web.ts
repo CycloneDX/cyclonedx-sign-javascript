@@ -463,7 +463,29 @@ async function importJwkPublicAsHandle(jwk: JwkPublicKey): Promise<PublicKeyHand
   if (jwk.kty === 'oct') {
     throw new Error('oct keys are symmetric, not public');
   }
+  // If the JWK carries private parameters, route via the private path
+  // and return its public half. Mirrors the Node backend (where
+  // `createPublicKey()` accepts a JWK with `d`) and the PEM path
+  // (where `-----BEGIN PRIVATE KEY-----` works on importPublicKey).
+  // Without this branch a private JWK would be stored on the
+  // WebPublicKey verbatim, and the next `Subtle.importKey('jwk', ...)`
+  // call asking for `verify` usage would error out — Subtle refuses
+  // verify usage on a key with private params.
+  if (jwkHasPrivateParams(jwk)) {
+    const priv = new WebPrivateKey(jwk);
+    return priv.publicHandle();
+  }
   return new WebPublicKey(jwk);
+}
+
+/**
+ * True when `jwk` carries any of the per-kty private parameters
+ * defined by RFC 7518 / RFC 8037. The presence of `d` alone is
+ * sufficient for every supported asymmetric kty (RSA, EC, OKP).
+ */
+function jwkHasPrivateParams(jwk: JwkPublicKey): boolean {
+  const r = jwk as unknown as Record<string, unknown>;
+  return typeof r.d === 'string' && r.d.length > 0;
 }
 
 async function importPemPrivate(pem: string): Promise<PrivateKeyHandle> {

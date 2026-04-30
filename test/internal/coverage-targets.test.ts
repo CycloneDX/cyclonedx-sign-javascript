@@ -193,36 +193,55 @@ describe('node.ts: ECDSA pre-hashed scalar length and signature length guards', 
 });
 
 describe('node.ts: key-import dispatch coverage', () => {
-  it('importPrivateKey accepts a Uint8Array as HMAC bytes', async () => {
-    const handle = await nodeBackend.importPrivateKey(new Uint8Array([1, 2, 3, 4]));
-    expect(handle.kind).toBe('oct');
+  // Below: the asymmetric importers must reject symmetric material.
+  // The previous behavior silently wrapped a secret KeyObject as a
+  // NodePrivateKey / NodePublicKey, producing a "private" or "public"
+  // handle whose `kind` was 'oct'. Downstream sign / verify primitives
+  // would then call `nodeSign(...)` / `nodeVerify(...)` against a
+  // secret KeyObject and fail with a misleading node:crypto error.
+  // The Web backend has always rejected these shapes; both backends
+  // now agree.
+
+  it('importPrivateKey rejects raw Uint8Array (HMAC material)', async () => {
+    await expect(nodeBackend.importPrivateKey(new Uint8Array([1, 2, 3, 4])))
+      .rejects.toThrow(/HMAC|asymmetric/i);
   });
 
-  it('importPublicKey accepts a Uint8Array as HMAC bytes', async () => {
-    const handle = await nodeBackend.importPublicKey(new Uint8Array([1, 2, 3, 4]));
-    expect(handle.kind).toBe('oct');
+  it('importPublicKey rejects raw Uint8Array (HMAC material)', async () => {
+    await expect(nodeBackend.importPublicKey(new Uint8Array([1, 2, 3, 4])))
+      .rejects.toThrow(/HMAC|asymmetric/i);
   });
 
-  it('importPrivateKey accepts an oct JWK', async () => {
-    const handle = await nodeBackend.importPrivateKey({ kty: 'oct', k: 'AQID' } as never);
-    expect(handle.kind).toBe('oct');
+  it('importPrivateKey rejects an oct JWK', async () => {
+    await expect(nodeBackend.importPrivateKey({ kty: 'oct', k: 'AQID' } as never))
+      .rejects.toThrow(/importHmacKey|symmetric/i);
   });
 
-  it('importPublicKey accepts an oct JWK', async () => {
-    const handle = await nodeBackend.importPublicKey({ kty: 'oct', k: 'AQID' } as never);
-    expect(handle.kind).toBe('oct');
+  it('importPublicKey rejects an oct JWK', async () => {
+    await expect(nodeBackend.importPublicKey({ kty: 'oct', k: 'AQID' } as never))
+      .rejects.toThrow(/symmetric|not public/i);
+  });
+
+  it('importPublicKey rejects a secret KeyObject', async () => {
+    const sym = await nodeBackend.importHmacKey(new Uint8Array(32), 'sha-256');
+    // NodeSymmetricKey wraps a secret KeyObject; pull it out so we
+    // can confirm the bare KeyObject is also rejected.
+    const ko = (sym as unknown as { keyObject: unknown }).keyObject;
+    await expect(nodeBackend.importPublicKey(ko as never))
+      .rejects.toThrow(/symmetric|secret/i);
   });
 
   it('importPrivateKey rejects a public KeyObject', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
     await expect(nodeBackend.importPrivateKey(publicKey))
-      .rejects.toThrow(/private or secret/);
+      .rejects.toThrow(/requires a private KeyObject|public/i);
   });
 
-  it('publicHandle on a symmetric key throws (no separable public half)', async () => {
-    const handle = await nodeBackend.importPrivateKey(new Uint8Array(32));
-    await expect((handle as never as { publicHandle: () => Promise<never> }).publicHandle())
-      .rejects.toThrow(/Symmetric/);
+  it('importPrivateKey rejects a secret KeyObject', async () => {
+    const sym = await nodeBackend.importHmacKey(new Uint8Array(32), 'sha-256');
+    const ko = (sym as unknown as { keyObject: unknown }).keyObject;
+    await expect(nodeBackend.importPrivateKey(ko as never))
+      .rejects.toThrow(/requires a private KeyObject|symmetric|secret/i);
   });
 });
 

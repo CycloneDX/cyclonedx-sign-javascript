@@ -552,3 +552,88 @@ describe('web backend importPublicKey accepts PRIVATE KEY PEM (auto-public deriv
     await expect(webBackend.importPublicKey(bogus)).rejects.toThrow(/PUBLIC KEY.*PRIVATE KEY|PRIVATE KEY.*PUBLIC KEY/);
   });
 });
+
+/**
+ * The PEM-side fix in `importPemPublic` has a JWK twin: when a caller
+ * passes a JWK that still carries private parameters (`d`) to
+ * `importPublicKey`, the resulting handle used to keep the private
+ * fields verbatim. `exportJwk` sanitized the result so the embedded
+ * `publicKey` was correct, but `WebPublicKey.getCryptoKey` would hand
+ * the private JWK straight to Subtle, which refuses verify usage on a
+ * private key and surfaces a `DataError` far from the caller. The fix
+ * routes a private JWK through `WebPrivateKey` and returns its
+ * `publicHandle()`, mirroring the PEM behavior.
+ */
+describe('web backend importPublicKey accepts JWK with private params (auto-public derivation)', () => {
+  for (const modulusBits of [2048, 3072] as const) {
+    it(`derives a public RSA handle from an RSA JWK with d (${modulusBits}-bit)`, async () => {
+      const { privateKey, publicKey } = rsaPair(modulusBits);
+      const privJwk = privateKey.export({ format: 'jwk' }) as Record<string, unknown>;
+      const expectedPubJwk = publicKey.export({ format: 'jwk' }) as Record<string, string>;
+
+      const handle = await webBackend.importPublicKey(privJwk as never);
+      expect(handle.kind).toBe('rsa');
+      expect(handle.rsaModulusBits).toBe(modulusBits);
+
+      const exported = await handle.exportJwk() as unknown as Record<string, unknown>;
+      expect(exported).not.toHaveProperty('d');
+      expect(exported).not.toHaveProperty('p');
+      expect(exported).not.toHaveProperty('q');
+      expect(exported.kty).toBe('RSA');
+      expect(exported.n).toBe(expectedPubJwk.n);
+      expect(exported.e).toBe(expectedPubJwk.e);
+    });
+  }
+
+  for (const [curve, jwkCurve] of [
+    ['prime256v1', 'P-256'],
+    ['secp384r1', 'P-384'],
+    ['secp521r1', 'P-521'],
+  ] as const) {
+    it(`derives a public EC handle (${jwkCurve}) from an EC JWK with d`, async () => {
+      const { privateKey, publicKey } = ecPair(curve);
+      const privJwk = privateKey.export({ format: 'jwk' }) as Record<string, unknown>;
+      const expectedPubJwk = publicKey.export({ format: 'jwk' }) as Record<string, string>;
+
+      const handle = await webBackend.importPublicKey(privJwk as never);
+      expect(handle.kind).toBe('ec');
+      expect(handle.curve).toBe(jwkCurve);
+
+      const exported = await handle.exportJwk() as unknown as Record<string, unknown>;
+      expect(exported).not.toHaveProperty('d');
+      expect(exported.kty).toBe('EC');
+      expect(exported.crv).toBe(jwkCurve);
+      expect(exported.x).toBe(expectedPubJwk.x);
+      expect(exported.y).toBe(expectedPubJwk.y);
+    });
+  }
+
+  it('derives a public Ed25519 handle from an OKP JWK with d', async () => {
+    const { privateKey, publicKey } = edPair('ed25519');
+    const privJwk = privateKey.export({ format: 'jwk' }) as Record<string, unknown>;
+    const expectedPubJwk = publicKey.export({ format: 'jwk' }) as Record<string, string>;
+
+    const handle = await webBackend.importPublicKey(privJwk as never);
+    expect(handle.kind).toBe('ed25519');
+    expect(handle.curve).toBe('Ed25519');
+
+    const exported = await handle.exportJwk() as unknown as Record<string, unknown>;
+    expect(exported).not.toHaveProperty('d');
+    expect(exported.kty).toBe('OKP');
+    expect(exported.crv).toBe('Ed25519');
+    expect(exported.x).toBe(expectedPubJwk.x);
+  });
+
+  it('verify usage on a derived handle from a private JWK does not leak Subtle DataError', async () => {
+    // The user-visible symptom of the original bug was a Subtle
+    // DataError at first verify call (verify usage on a private key).
+    // After the fix, the verify side imports the sanitized public JWK
+    // through Subtle without complaint and the round-trip succeeds.
+    const { privateKey } = ecPair('secp521r1');
+    const privJwk = privateKey.export({ format: 'jwk' });
+    const priv = await webBackend.importPrivateKey(privJwk as never);
+    const pub = await webBackend.importPublicKey(privJwk as never);
+    const sig = await webBackend.signEcdsa('sha-512', DATA, priv);
+    expect(await webBackend.verifyEcdsa('sha-512', DATA, sig, pub)).toBe(true);
+  });
+});
