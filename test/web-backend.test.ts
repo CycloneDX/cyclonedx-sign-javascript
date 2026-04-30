@@ -385,3 +385,170 @@ describe('web backend PublicKeyHandle / PrivateKeyHandle exports', () => {
     expect(reimported.curve).toBe('P-521');
   });
 });
+
+/**
+ * Regression coverage for the JSF `publicKey: 'auto'` path on the Web
+ * backend.
+ *
+ * Background: when a caller invokes `sign(...)` without an explicit
+ * `publicKey`, the JSF binding defaults to `'auto'` and calls
+ * `exportPublicJwk(privateKey)` to derive the JWK to embed in the
+ * signaturecore. That helper resolves to the active backend's
+ * `importPublicKey()`. The Node backend accepts a `-----BEGIN PRIVATE
+ * KEY-----` PEM there because `node:crypto.createPublicKey()` derives
+ * the public half transparently. The Web backend used to reject it
+ * because its `importPemPublic()` strict-checked the PEM label. Now
+ * the Web backend mirrors the Node behavior: a PRIVATE KEY PEM passed
+ * to `importPublicKey()` returns a public handle whose JWK is the
+ * sanitized public half of the private key.
+ */
+describe('web backend importPublicKey accepts PRIVATE KEY PEM (auto-public derivation)', () => {
+  for (const modulusBits of [2048, 3072] as const) {
+    it(`derives a public RSA handle from a PKCS#8 ${modulusBits}-bit private PEM`, async () => {
+      const { privateKey, publicKey } = rsaPair(modulusBits);
+      const privPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+      const expectedPubJwk = publicKey.export({ format: 'jwk' }) as Record<string, string>;
+
+      const handle = await webBackend.importPublicKey(privPem);
+      expect(handle.kind).toBe('rsa');
+      expect(handle.rsaModulusBits).toBe(modulusBits);
+
+      const jwk = await handle.exportJwk() as unknown as Record<string, unknown>;
+      expect(jwk).not.toHaveProperty('d');
+      expect(jwk).not.toHaveProperty('p');
+      expect(jwk).not.toHaveProperty('q');
+      expect(jwk.kty).toBe('RSA');
+      expect(jwk.n).toBe(expectedPubJwk.n);
+      expect(jwk.e).toBe(expectedPubJwk.e);
+    });
+  }
+
+  for (const [curve, jwkCurve] of [
+    ['prime256v1', 'P-256'],
+    ['secp384r1', 'P-384'],
+    ['secp521r1', 'P-521'],
+  ] as const) {
+    it(`derives a public EC handle (${jwkCurve}) from a PKCS#8 private PEM`, async () => {
+      const { privateKey, publicKey } = ecPair(curve);
+      const privPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+      const expectedPubJwk = publicKey.export({ format: 'jwk' }) as Record<string, string>;
+
+      const handle = await webBackend.importPublicKey(privPem);
+      expect(handle.kind).toBe('ec');
+      expect(handle.curve).toBe(jwkCurve);
+
+      const jwk = await handle.exportJwk() as unknown as Record<string, unknown>;
+      expect(jwk).not.toHaveProperty('d');
+      expect(jwk.kty).toBe('EC');
+      expect(jwk.crv).toBe(jwkCurve);
+      expect(jwk.x).toBe(expectedPubJwk.x);
+      expect(jwk.y).toBe(expectedPubJwk.y);
+    });
+  }
+
+  it('derives a public Ed25519 handle from a PKCS#8 private PEM', async () => {
+    const { privateKey, publicKey } = edPair('ed25519');
+    const privPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+    const expectedPubJwk = publicKey.export({ format: 'jwk' }) as Record<string, string>;
+
+    const handle = await webBackend.importPublicKey(privPem);
+    expect(handle.kind).toBe('ed25519');
+    expect(handle.curve).toBe('Ed25519');
+
+    const jwk = await handle.exportJwk() as unknown as Record<string, unknown>;
+    expect(jwk).not.toHaveProperty('d');
+    expect(jwk.kty).toBe('OKP');
+    expect(jwk.crv).toBe('Ed25519');
+    expect(jwk.x).toBe(expectedPubJwk.x);
+  });
+
+  it('derives a public Ed448 handle from a PKCS#8 private PEM via the noble fallback', async () => {
+    const { privateKey, publicKey } = edPair('ed448');
+    const privPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+    const expectedPubJwk = publicKey.export({ format: 'jwk' }) as Record<string, string>;
+
+    const handle = await webBackend.importPublicKey(privPem);
+    expect(handle.kind).toBe('ed448');
+    expect(handle.curve).toBe('Ed448');
+
+    const jwk = await handle.exportJwk() as unknown as Record<string, unknown>;
+    expect(jwk).not.toHaveProperty('d');
+    expect(jwk.kty).toBe('OKP');
+    expect(jwk.crv).toBe('Ed448');
+    expect(jwk.x).toBe(expectedPubJwk.x);
+  });
+
+  /**
+   * End-to-end smoke: sign/verify across the full algorithm matrix
+   * where the verify side uses the auto-derived public handle that
+   * came from the private-key PEM. This is the path the JSF binding
+   * walks when `publicKey: 'auto'` and the caller supplied only a
+   * private PEM (the BOM Studio scenario).
+   *
+   * RSA covers every JSF-registered RSA shape (RS/PS at 256/384/512)
+   * because the auto-public path lives inside import, not the sign
+   * primitive itself, and we want the regression test to catch any
+   * future drift in the per-algorithm import code.
+   */
+  for (const sha of ['sha-256', 'sha-384', 'sha-512'] as const) {
+    it(`RS${sha.slice(4)} round-trips with auto-derived public handle from PRIVATE KEY PEM`, async () => {
+      const { privateKey } = rsaPair(2048);
+      const privPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+      const priv = await webBackend.importPrivateKey(privPem);
+      const pub = await webBackend.importPublicKey(privPem);
+      const sig = await webBackend.signRsaPkcs1(sha, DATA, priv);
+      expect(await webBackend.verifyRsaPkcs1(sha, DATA, sig, pub)).toBe(true);
+    });
+
+    it(`PS${sha.slice(4)} round-trips with auto-derived public handle from PRIVATE KEY PEM`, async () => {
+      const saltLen = parseInt(sha.slice(4), 10) / 8;
+      const { privateKey } = rsaPair(2048);
+      const privPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+      const priv = await webBackend.importPrivateKey(privPem);
+      const pub = await webBackend.importPublicKey(privPem);
+      const sig = await webBackend.signRsaPss(sha, DATA, saltLen, priv);
+      expect(await webBackend.verifyRsaPss(sha, DATA, saltLen, sig, pub)).toBe(true);
+    });
+  }
+
+  for (const [curve, jwkCurve] of [
+    ['prime256v1', 'P-256'],
+    ['secp384r1', 'P-384'],
+    ['secp521r1', 'P-521'],
+  ] as const) {
+    it(`ES (${jwkCurve}) round-trips with auto-derived public handle from PRIVATE KEY PEM`, async () => {
+      const sha = jwkCurve === 'P-256' ? 'sha-256'
+        : jwkCurve === 'P-384' ? 'sha-384'
+        : 'sha-512';
+      const { privateKey } = ecPair(curve);
+      const privPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+      const priv = await webBackend.importPrivateKey(privPem);
+      const pub = await webBackend.importPublicKey(privPem);
+      const sig = await webBackend.signEcdsa(sha, DATA, priv);
+      expect(await webBackend.verifyEcdsa(sha, DATA, sig, pub)).toBe(true);
+    });
+  }
+
+  it('Ed25519 round-trips with auto-derived public handle from PRIVATE KEY PEM', async () => {
+    const { privateKey } = edPair('ed25519');
+    const privPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+    const priv = await webBackend.importPrivateKey(privPem);
+    const pub = await webBackend.importPublicKey(privPem);
+    const sig = await webBackend.signEddsa(DATA, priv);
+    expect(await webBackend.verifyEddsa(DATA, sig, pub)).toBe(true);
+  });
+
+  it('Ed448 round-trips with auto-derived public handle from PRIVATE KEY PEM', async () => {
+    const { privateKey } = edPair('ed448');
+    const privPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+    const priv = await webBackend.importPrivateKey(privPem);
+    const pub = await webBackend.importPublicKey(privPem);
+    const sig = await webBackend.signEddsa(DATA, priv);
+    expect(await webBackend.verifyEddsa(DATA, sig, pub)).toBe(true);
+  });
+
+  it('still rejects unknown PEM labels with a message naming both accepted forms', async () => {
+    const bogus = '-----BEGIN UNKNOWN BLOB-----\nAAAA\n-----END UNKNOWN BLOB-----\n';
+    await expect(webBackend.importPublicKey(bogus)).rejects.toThrow(/PUBLIC KEY.*PRIVATE KEY|PRIVATE KEY.*PUBLIC KEY/);
+  });
+});

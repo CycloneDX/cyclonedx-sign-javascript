@@ -227,10 +227,15 @@ describe('Web backend: key import error paths', () => {
     await expect(webBackend.importPrivateKey(pem)).rejects.toThrow(/PKCS#8|PRIVATE KEY/);
   });
 
-  it('importPublicKey rejects a non-PUBLIC KEY PEM label', async () => {
-    const { privateKey } = ecPair('prime256v1');
-    const pem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
-    await expect(webBackend.importPublicKey(pem)).rejects.toThrow(/SPKI|PUBLIC KEY/);
+  it('importPublicKey rejects PEM labels other than PUBLIC KEY or PRIVATE KEY', async () => {
+    // PRIVATE KEY itself is now accepted (mirrors the Node backend's
+    // createPublicKey() behavior), so use a PKCS#1 RSA PEM whose label
+    // is "RSA PRIVATE KEY" — that is neither SPKI nor PKCS#8 and must
+    // still fail with a message naming both accepted forms.
+    const { privateKey } = rsaPair(2048);
+    const pkcs1Pem = privateKey.export({ format: 'pem', type: 'pkcs1' }).toString();
+    await expect(webBackend.importPublicKey(pkcs1Pem))
+      .rejects.toThrow(/PUBLIC KEY.*PRIVATE KEY|PRIVATE KEY.*PUBLIC KEY/);
   });
 
   it('publicHandle on a private handle returns the public half', async () => {

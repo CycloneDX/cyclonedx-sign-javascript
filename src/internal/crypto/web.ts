@@ -474,6 +474,19 @@ async function importPemPrivate(pem: string): Promise<PrivateKeyHandle> {
         'Convert with: openssl pkcs8 -topk8 -nocrypt -in key.pem -out key.pkcs8.pem',
     );
   }
+  return importPkcs8PrivateDer(der);
+}
+
+/**
+ * Import a PKCS#8 PRIVATE KEY DER blob and return a private key handle.
+ *
+ * Split out from `importPemPrivate` so the SPKI-only path
+ * (`importPemPublic`) can also route a PRIVATE KEY PEM through here
+ * without re-parsing the PEM wrapper. Without this split the public
+ * path could not derive a public half from a private-key PEM the way
+ * the Node backend does via `node:crypto.createPublicKey()`.
+ */
+async function importPkcs8PrivateDer(der: Uint8Array): Promise<PrivateKeyHandle> {
   const algo = detectDerAlgorithm(der, true);
   // Ed448 has no Subtle support anywhere, so handle it before asking
   // for a Subtle algorithm identifier.
@@ -491,7 +504,35 @@ async function importPemPrivate(pem: string): Promise<PrivateKeyHandle> {
   const usages: KeyUsage[] = ['sign'];
   const ck = await getSubtle().importKey('pkcs8', der, subtleAlgo, true, usages);
   const jwk = await getSubtle().exportKey('jwk', ck) as unknown as JwkPublicKey;
-  return new WebPrivateKey(jwk);
+  return new WebPrivateKey(stripJwkUsageHints(jwk));
+}
+
+/**
+ * Strip the JOSE usage-hint fields Subtle bakes into an exported JWK
+ * (`alg`, `key_ops`, `ext`, `use`).
+ *
+ * RSA is the load-bearing case. The Web backend's `subtleImportAlgo`
+ * has to pick a concrete `(name, hash)` pair to import a PKCS#8 RSA
+ * key (`{ name: 'RSA-PSS', hash: 'SHA-256' }`); Subtle then writes
+ * `alg: 'PS256'` into the JWK on export. Any later sign / verify call
+ * that re-imports that JWK with a different RSA shape or hash
+ * (RSASSA-PKCS1-v1_5, RSA-PSS at SHA-384/512, etc.) is rejected with
+ * `DataError: JWK "alg" does not match the requested algorithm`. The
+ * key material is identical across all those algorithms, so the
+ * mismatch is purely a JWK-metadata artifact. Stripping these fields
+ * lets the same handle work across every RSA-family algorithm we
+ * register, mirroring `node:crypto`'s algorithm-agnostic key objects.
+ *
+ * EC and OKP JWKs do not carry these hints in practice, but stripping
+ * is safe and keeps the import paths consistent.
+ */
+function stripJwkUsageHints(jwk: JwkPublicKey): JwkPublicKey {
+  const out = jwk as unknown as Record<string, unknown>;
+  delete out.alg;
+  delete out.key_ops;
+  delete out.ext;
+  delete out.use;
+  return jwk;
 }
 
 /**
@@ -608,9 +649,21 @@ function padLeftToLength(bytes: Uint8Array, width: number): Uint8Array {
 
 async function importPemPublic(pem: string): Promise<PublicKeyHandle> {
   const { label, der } = parsePem(pem);
+  // The Node backend's `createPublicKey()` transparently derives the
+  // public half from a PKCS#8 private-key PEM. Without this branch the
+  // Web backend would reject a `-----BEGIN PRIVATE KEY-----` PEM here
+  // even though the same input on the Node backend works fine, which
+  // breaks the JSF auto-public flow (`publicKey: 'auto'` calls
+  // `exportPublicJwk(privateKey)` -> `importPublicKey(pem)` to derive
+  // the JWK to embed in the envelope).
+  if (label === 'PRIVATE KEY') {
+    const priv = await importPkcs8PrivateDer(der);
+    return priv.publicHandle();
+  }
   if (label !== 'PUBLIC KEY') {
     throw new Error(
-      `Web backend only accepts SPKI public keys (-----BEGIN PUBLIC KEY-----); got "${label}".`,
+      'Web backend accepts SPKI public keys (-----BEGIN PUBLIC KEY-----) ' +
+        `or PKCS#8 private keys (-----BEGIN PRIVATE KEY-----); got "${label}".`,
     );
   }
   const algo = detectDerAlgorithm(der, false);
@@ -629,7 +682,7 @@ async function importPemPublic(pem: string): Promise<PublicKeyHandle> {
   const usages: KeyUsage[] = ['verify'];
   const ck = await getSubtle().importKey('spki', der, subtleAlgo, true, usages);
   const jwk = await getSubtle().exportKey('jwk', ck) as unknown as JwkPublicKey;
-  return new WebPublicKey(jwk);
+  return new WebPublicKey(stripJwkUsageHints(jwk));
 }
 
 function subtleImportAlgo(kind: KeyKind, curve: EcCurve | EdCurve | null): SubtleAlgo {
