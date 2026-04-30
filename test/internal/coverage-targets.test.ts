@@ -149,6 +149,12 @@ describe('web.ts: extractSpkiFromX509 error branches', () => {
 // ---------------------------------------------------------------------------
 
 describe('web.ts: JSS pre-hashed RSA on a 4096-bit modulus', () => {
+  // 4096-bit RSA keygen plus two pure-JS BigInt modPow operations on
+  // a 4096-bit modulus. The modPow path is the cost driver (the same
+  // numerics that ship to browsers since WebCrypto exposes no raw RSA
+  // primitive). Wall-clock varies wildly under CI load, so give this
+  // one test a generous timeout rather than letting transient slowness
+  // mask a real regression somewhere else in the suite.
   it('signs and verifies via the BigInt path', async () => {
     const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 4096 });
     const priv = await webBackend.importPrivateKey(privateKey.export({ format: 'jwk' }) as never);
@@ -157,7 +163,7 @@ describe('web.ts: JSS pre-hashed RSA on a 4096-bit modulus', () => {
     const sig = await webBackend.signRsaPssPrehashed('sha-512', digest, 64, priv);
     expect(sig.length).toBe(512);
     expect(await webBackend.verifyRsaPssPrehashed('sha-512', digest, 64, sig, pub)).toBe(true);
-  });
+  }, 60_000);
 });
 
 // ---------------------------------------------------------------------------
