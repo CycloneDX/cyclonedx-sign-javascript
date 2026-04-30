@@ -390,16 +390,18 @@ async function certPublicKey(b64Der: string): Promise<PublicKeyHandle> {
 }
 
 function b64ToBytes(s: string): Uint8Array {
-  // Accepts either standard or URL-safe base64.
+  // Accepts either standard or URL-safe base64. atob is a global on
+  // every runtime this package targets (browsers, Node 20+, Deno,
+  // Workers); the previous Buffer fallback was a Node-only path that
+  // dead-coded the Web bundle and tripped a ReferenceError if it ever
+  // executed.
   const cleaned = s.replace(/-/g, '+').replace(/_/g, '/');
   const padded = cleaned + '='.repeat((4 - (cleaned.length % 4)) % 4);
-  if (typeof atob === 'function') {
-    const bin = atob(padded);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
-    return out;
-  }
-  return new Uint8Array(Buffer.from(padded, 'base64'));
+  const bin = atob(padded);
+  const out = new Uint8Array(bin.length);
+  // eslint-disable-next-line security/detect-object-injection -- counted loop bounded by length.
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 export {

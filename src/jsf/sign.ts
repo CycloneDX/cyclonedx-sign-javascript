@@ -496,9 +496,15 @@ function extractRawCores(
 }
 
 // Local copy of the base64url encoder to avoid a circular import.
+// Matches src/base64url.ts: btoa-based so the Web bundle can encode
+// `value` strings without reaching for the Node-only Buffer global.
 function base64url(bytes: Uint8Array): string {
-  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    // eslint-disable-next-line security/detect-object-injection -- counted loop bounded by length.
+    bin += String.fromCharCode(bytes[i]!);
+  }
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 // Re-export type aliases for external callers.

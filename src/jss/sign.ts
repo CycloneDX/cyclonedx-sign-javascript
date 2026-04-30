@@ -741,7 +741,20 @@ async function resolveSignerKey(
   if (Array.isArray(ext.public_cert_chain) && ext.public_cert_chain.length > 0) {
     const first = ext.public_cert_chain[0];
     if (typeof first === 'string' && first.length > 0) {
-      const der = Uint8Array.from(Buffer.from(first, 'base64'));
+      // The JSS spec calls for standard base64 here, but Node's
+      // Buffer.from(s, 'base64') was lenient and accepted URL-safe
+      // characters too, so envelopes in the wild may use either
+      // alphabet. Preserve that leniency: convert URL-safe chars
+      // to standard, pad, then decode via atob (Buffer is Node-only
+      // and breaks the Web bundle).
+      const cleaned = first.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = cleaned + '='.repeat((4 - (cleaned.length % 4)) % 4);
+      const bin = atob(padded);
+      const der = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) {
+        // eslint-disable-next-line security/detect-object-injection -- counted loop bounded by length.
+        der[i] = bin.charCodeAt(i);
+      }
       return backend.parseCertSpkiPublicKey(der);
     }
   }

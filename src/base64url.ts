@@ -23,12 +23,30 @@ Copyright (c) OWASP Foundation. All Rights Reserved.
  * Unlike standard base64, base64url uses `-` and `_` in place of `+`
  * and `/` and omits `=` padding. All JSF signature values and JWK
  * coordinates use this encoding.
+ *
+ * Implemented against `btoa` / `atob` rather than Node's `Buffer`.
+ * Both are exposed as globals on every runtime this package targets:
+ * Node 20+, browsers, Deno, Cloudflare Workers, etc. An earlier
+ * version of this module called `Buffer.from(...).toString('base64')`,
+ * which threw `ReferenceError: Buffer is not defined` the moment the
+ * Web bundle reached `value`-encoding inside the JSF sign pipeline.
  */
 
-export function encodeBase64Url(input: Uint8Array | Buffer): string {
-  const buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
-  return buf
-    .toString('base64')
+/**
+ * Encode a byte sequence as base64url. Accepts any `Uint8Array`-shaped
+ * input, including `Buffer` (which extends Uint8Array) for backward
+ * compatibility with Node-side callers.
+ */
+export function encodeBase64Url(input: Uint8Array): string {
+  // String.fromCharCode applied byte-by-byte builds a binary string
+  // that btoa understands. Spread (`...input`) would blow the call
+  // stack on very large inputs; a counted loop stays safe.
+  let bin = '';
+  for (let i = 0; i < input.length; i += 1) {
+    // eslint-disable-next-line security/detect-object-injection -- counted loop bounded by length.
+    bin += String.fromCharCode(input[i]!);
+  }
+  return btoa(bin)
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/, '');
@@ -46,7 +64,13 @@ export function decodeBase64Url(input: string): Uint8Array {
   }
   const padLength = (4 - (input.length % 4)) % 4;
   const padded = input.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat(padLength);
-  return new Uint8Array(Buffer.from(padded, 'base64'));
+  const bin = atob(padded);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) {
+    // eslint-disable-next-line security/detect-object-injection -- counted loop bounded by length.
+    out[i] = bin.charCodeAt(i);
+  }
+  return out;
 }
 
 /**
@@ -54,12 +78,11 @@ export function decodeBase64Url(input: string): Uint8Array {
  * stripped. Useful for RSA modulus/exponent conversion where JWK
  * rejects unneeded leading zero octets.
  */
-export function encodeBase64UrlBigInteger(bytes: Uint8Array | Buffer): string {
-  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+export function encodeBase64UrlBigInteger(bytes: Uint8Array): string {
   let start = 0;
-  // eslint-disable-next-line security/detect-object-injection -- `start` is a loop-bounded numeric index into a Buffer we just materialized.
-  while (start < buf.length - 1 && buf[start] === 0) {
+  // eslint-disable-next-line security/detect-object-injection -- `start` is a loop-bounded numeric index.
+  while (start < bytes.length - 1 && bytes[start] === 0) {
     start += 1;
   }
-  return encodeBase64Url(buf.subarray(start));
+  return encodeBase64Url(bytes.subarray(start));
 }
