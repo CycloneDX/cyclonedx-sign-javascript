@@ -76,25 +76,36 @@ describe('JWK', () => {
       expect(out.curve).toBe('P-521');
     });
 
-    it('accepts HMAC bytes as a Buffer', async () => {
+    // The asymmetric importer must reject HMAC-shaped material.
+    // Previously these inputs were silently wrapped as a "private"
+    // handle whose kind was 'oct'; sign-side primitives would then
+    // call nodeSign / Subtle.sign against a secret KeyObject and
+    // surface a misleading low-level error. HMAC material now has
+    // its own door (`backend.importHmacKey`).
+
+    it('rejects raw Buffer bytes (HMAC material)', async () => {
       const secret = randomBytes(32);
-      const out = await toPrivateKey(secret);
-      expect(out.kind).toBe('oct');
+      await expect(toPrivateKey(secret)).rejects.toThrow(JsfKeyError);
+      await expect(toPrivateKey(secret)).rejects.toThrow(/HMAC|asymmetric/i);
     });
 
-    it('accepts HMAC bytes as a Uint8Array', async () => {
+    it('rejects raw Uint8Array bytes (HMAC material)', async () => {
       const bytes = new Uint8Array([1, 2, 3, 4]);
-      const out = await toPrivateKey(bytes);
-      expect(out.kind).toBe('oct');
+      await expect(toPrivateKey(bytes)).rejects.toThrow(JsfKeyError);
+      await expect(toPrivateKey(bytes)).rejects.toThrow(/HMAC|asymmetric/i);
     });
 
-    it('accepts an oct JWK and decodes k from base64url', async () => {
-      const out = await toPrivateKey({ kty: 'oct', k: 'AQID' } as never);
-      expect(out.kind).toBe('oct');
+    it('rejects an oct JWK', async () => {
+      // Whether or not `k` is present — `kty: 'oct'` is symmetric and
+      // the asymmetric importer should refuse it before validating
+      // `k`. The missing-k validation now lives on `importHmacKey`.
+      await expect(toPrivateKey({ kty: 'oct', k: 'AQID' } as never)).rejects.toThrow(JsfKeyError);
+      await expect(toPrivateKey({ kty: 'oct', k: 'AQID' } as never))
+        .rejects.toThrow(/importHmacKey|symmetric/i);
     });
 
-    it('rejects oct JWK without k', async () => {
-      await expect(toPrivateKey({ kty: 'oct' } as never)).rejects.toThrow(/k/);
+    it('rejects an oct JWK without k for the same reason', async () => {
+      await expect(toPrivateKey({ kty: 'oct' } as never)).rejects.toThrow(JsfKeyError);
     });
 
     it('rejects unknown key input shapes', async () => {
@@ -138,10 +149,10 @@ describe('JWK', () => {
       expect(out.kind).toBe('rsa');
     });
 
-    it('accepts a Node secret KeyObject as HMAC material', async () => {
+    it('rejects a Node secret KeyObject (HMAC material)', async () => {
       const secret = createSecretKey(randomBytes(16));
-      const out = await toPublicKey(secret);
-      expect(out.kind).toBe('oct');
+      await expect(toPublicKey(secret)).rejects.toThrow(JsfKeyError);
+      await expect(toPublicKey(secret)).rejects.toThrow(/secret|symmetric|HMAC/i);
     });
 
     it('rejects non-key input', async () => {
