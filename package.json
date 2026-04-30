@@ -1,6 +1,6 @@
 {
   "name": "@cyclonedx/sign",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Standalone TypeScript implementation of JSON Signature Format (JSF), JSON Signature Schema (JSS, X.590), and the JSON Canonicalization Scheme (JCS, RFC 8785). Single library covering CycloneDX 1.x (JSF) and 2.x (JSS). Ships first-class crypto backends for Node (node:crypto) and Web (crypto.subtle); the runtime is selected automatically per consumer.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/CycloneDX/cyclonedx-sign-javascript#readme",
